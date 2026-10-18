@@ -1,0 +1,17 @@
+{
+  "listen": "127.0.0.1:8090",
+  "targets": [
+    {
+      "name": "pruebas",
+      "vm": "consola-pruebas",
+      "ip": "192.168.40.60",
+      "ssh_user": "root"
+    },
+    {
+      "name": "balanceador",
+      "vm": "balanceador",
+      "ip": "192.168.40.53",
+      "ssh_user": "root"
+    }
+  ]
+}

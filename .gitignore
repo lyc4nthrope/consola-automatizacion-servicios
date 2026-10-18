@@ -5,6 +5,7 @@ keys/
 id_rsa*
 id_ed25519*
 .env
+/config.json
 config.local.json
 
 # Runtime output
