@@ -8,6 +8,20 @@
 > Cada parte es dueña de sus carpetas del código, así nadie pisa el trabajo de otro.
 > Antes de repartir hay un **día común** (Hito 0) donde se acuerda el contrato que todos usan.
 
+## Mapa de documentos
+
+| Documento | Para quién | Qué contiene |
+|---|---|---|
+| Este plan general | Todo el equipo | Qué pide el parcial, decisiones comunes, reparto en tres partes, cronograma, videos |
+| [Plan de la Parte A](parte-a/PLAN.md) | Cristhian | Plataforma, preparación del sistema, Guest Additions, diseño de la interfaz |
+| [Plan de la Parte B](parte-b/PLAN.md) | Daniel | Canal SSH, bootstrap, llaves de root, usuarios, documento final |
+| [Plan de la Parte C](parte-c/PLAN.md) | Wiliam | VMs de prueba, servicios systemd, HAProxy, diagrama |
+| [Guía de la base](base-para-modulos.md) | Partes B y C (y su asistente de IA) | API para construir un módulo: registro de rutas, operaciones, validación, formularios, pruebas |
+| [Reglas de seguridad](../.claude/claude-security-guidance.md) | Todos (y el revisor automático) | Lo que nunca debe pasar en el código y qué usar en su lugar |
+
+Cada plan de parte empieza con una sección **"Para el asistente de IA"** que se copia tal cual al inicio de la conversación con la IA de cada uno.
+
+
 ---
 
 ## 1. Qué pide el parcial y qué tenemos
@@ -53,7 +67,7 @@ Cada una es una recomendación; si el equipo cambia alguna, se anota aquí.
 
 ## 3. Contrato común (se acuerda el día 1, antes de repartir)
 
-Este es el único punto donde las tres partes se tocan. Con esto acordado, cada uno trabaja en paralelo usando un `Fake` mientras la implementación real no está lista.
+Este es el único punto donde las tres partes se tocan. **La versión implementada y detallada (con `registerModule`, `runAndShow`, `Plan.AlsoOK`, formularios con errores por campo) está en la [guía de la base](base-para-modulos.md)**; si algo de esta sección difiere, manda la guía. Con esto acordado, cada uno trabaja en paralelo usando un `Fake` mientras la implementación real no está lista.
 
 ```go
 // internal/executor/executor.go
@@ -72,11 +86,14 @@ type Result struct {
 }
 
 type Executor interface {
+    Name() string // canal: "Guest Additions" o "SSH"; se muestra en la interfaz y se guarda en el registro
     Run(ctx context.Context, c Command) (Result, error)
     CopyTo(ctx context.Context, localPath, remotePath string) error   // host → VM
     CopyFrom(ctx context.Context, remotePath, localPath string) error // VM → host (descargar llaves, leer haproxy.cfg)
 }
 ```
+
+**Estado de la app (lo implementa A en F1):** la app guarda, por cada destino, qué `Executor` está activo. `state.SetExecutor(destino, ex)` lo cambia (B lo llama al terminar el bootstrap SSH) y `state.Executor(destino)` lo entrega a los módulos.
 
 **Estructura del repositorio y dueño de cada carpeta:**
 
@@ -103,7 +120,16 @@ consola/
 
 **Reglas de trabajo:**
 
-- Un repositorio Git privado. Cada parte trabaja en su rama (`parte-a/...`, `parte-b/...`, `parte-c/...`) y hace merge a `main` al cerrar cada fase.
+- Repositorio Git público con **solo cinco ramas**, sin ramas temporales:
+
+  | Rama | Para qué |
+  |---|---|
+  | `cristhian`, `daniel`, `wiliam` | Trabajo diario de cada persona; solo la toca su dueño |
+  | `dev` | Cambios listos para revisar e integrar; aquí se junta el trabajo de los tres |
+  | `main` | Versión estable y entregable; solo recibe `dev` cuando todo lo integrado funciona |
+
+- Flujo: se trabaja en la rama propia → al terminar una fase verificada, se sube a `dev` para revisión → `dev` pasa a `main` en los hitos (base del lunes 19, integración del jueves 22, entrega).
+- Antes de empezar cada fase, cada quien actualiza su rama con lo último de `dev`.
 - Mensajes de commit convencionales (`feat:`, `fix:`, `docs:`).
 - Una fase está **terminada** solo cuando su criterio de verificación pasa contra la VM real y hay commit.
 - `logs/`, `keys/` y cualquier llave privada van en `.gitignore`.
