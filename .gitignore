@@ -1,0 +1,22 @@
+# Private keys and secrets: never commit
+keys/
+*.pem
+*.ppk
+id_rsa*
+id_ed25519*
+.env
+config.local.json
+
+# Runtime output
+logs/
+
+# Build output
+/consola
+/bin/
+*.exe
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
