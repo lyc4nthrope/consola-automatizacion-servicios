@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/app"
@@ -19,12 +20,16 @@ import (
 // DefaultTimeout applies when a Plan does not set one.
 const DefaultTimeout = 30 * time.Second
 
+// ErrUnknownTarget is returned when a Plan names a target that is not in config.json.
+var ErrUnknownTarget = errors.New("unknown target")
+
 // Plan describes an operation requested from the interface.
 type Plan struct {
 	Action   string             // shown to the user, e.g. "Instalar aplicación"
 	Target   string             // target name
 	Commands []executor.Command // run in order; the first failure stops the operation
 	Timeout  time.Duration      // limit for the whole operation; DefaultTimeout if zero
+	AlsoOK   []int              // exit codes besides 0 that mean success (e.g. 3 for `systemctl status` of a stopped unit)
 
 	// Success, if set, writes the message for a successful operation from the results.
 	Success func([]executor.Result) string
@@ -51,7 +56,7 @@ func New(state *app.State, log *oplog.Log) *Runner {
 // half-done command (an apt install, for example) still finishes. Only p.Timeout stops it.
 func (r *Runner) Run(ctx context.Context, p Plan) (oplog.Entry, error) {
 	if !r.knownTarget(p.Target) {
-		return oplog.Entry{}, fmt.Errorf("unknown target %q", p.Target)
+		return oplog.Entry{}, fmt.Errorf("%w %q", ErrUnknownTarget, p.Target)
 	}
 	if len(p.Commands) == 0 {
 		return oplog.Entry{}, errors.New("plan without commands")
@@ -93,7 +98,7 @@ func (r *Runner) Run(ctx context.Context, p Plan) (oplog.Entry, error) {
 		e.Steps = append(e.Steps, step)
 		results = append(results, res)
 
-		if err == nil && res.ExitCode == 0 {
+		if err == nil && (res.ExitCode == 0 || slices.Contains(p.AlsoOK, res.ExitCode)) {
 			continue
 		}
 		e.OK = false

@@ -1,0 +1,16 @@
+{{/*
+  Partials for forms, available to every page.
+
+  Input linked to its error (the attributes appear only when the field is invalid):
+    <label for="paquete">Paquete</label>
+    <input id="paquete" name="paquete" value="{{index .Form.Values "paquete"}}" {{aria .Form "paquete"}}>
+    {{template "error-campo" (campo .Form "paquete")}}
+
+  Summary of every error, at the top of the form (announced, with links to each field):
+    {{template "resumen-errores" .Form}}
+*/}}
+{{define "error-campo"}}{{with .Error}}<p class="field-error" id="{{$.Name}}-error"><i class="bi bi-exclamation-circle" aria-hidden="true"></i> {{.}}</p>{{end}}{{end}}
+{{define "resumen-errores"}}{{if .Errors}}<div class="notice-warn error-summary" role="alert">
+  <p class="error-summary-title"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Revisa los datos antes de continuar:</p>
+  <ul>{{range $name, $msg := .Errors}}<li>{{if $name}}<a href="#{{$name}}">{{$msg}}</a>{{else}}{{$msg}}{{end}}</li>{{end}}</ul>
+</div>{{end}}{{end}}

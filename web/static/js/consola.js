@@ -112,3 +112,9 @@
     });
   });
 })();
+
+// After a rejected form comes back, put the keyboard on the first invalid field.
+(function () {
+  var first = document.querySelector('[aria-invalid="true"]');
+  if (first) first.focus();
+})();

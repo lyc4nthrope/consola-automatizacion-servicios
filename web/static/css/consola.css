@@ -1089,3 +1089,36 @@ h2 {
   background: var(--c-warn-soft);
   color: var(--c-warn);
 }
+
+/* ---------- Form errors (see templates/_formulario.html) ---------- */
+.field-error {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--c-fail);
+}
+
+[aria-invalid="true"] {
+  border-color: var(--c-fail);
+}
+
+.error-summary {
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0 0 1.25rem;
+}
+
+.error-summary-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.error-summary ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.error-summary a {
+  color: inherit;
+}

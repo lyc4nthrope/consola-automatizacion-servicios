@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -51,6 +52,8 @@ var templateFuncs = template.FuncMap{
 	"fecha": func(t time.Time) string {
 		return t.Format("02/01/2006 15:04:05")
 	},
+	"campo": campo,
+	"aria":  ariaCampo,
 }
 
 // formatDuration writes durations the way the interface shows them: "320 ms", "4,2 s", "2 min 5 s".
@@ -80,6 +83,8 @@ type view struct {
 	Last    *oplog.Entry  // last operation, for the status bar
 	Entry   *oplog.Entry  // set on the result page
 	Version string
+	Form    Form // module pages: values typed and errors per field
+	Data    any  // module pages: whatever the module passes to its template
 }
 
 // NewHandler returns the console routes.
@@ -88,19 +93,22 @@ func NewHandler(d Deps) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &server{state: d.State, log: d.Log, runner: operacion.New(d.State, d.Log), pages: map[string]*template.Template{}}
-	for _, name := range []string{"inicio.html", "modulo.html", "noencontrada.html", "resultado.html"} {
-		t, err := template.New("").Funcs(templateFuncs).ParseFS(d.Templates, "templates/layout.html", "templates/"+name)
-		if err != nil {
-			return nil, fmt.Errorf("parsing template %s: %w", name, err)
-		}
-		s.pages[name] = t
+	s := &server{state: d.State, log: d.Log, runner: operacion.New(d.State, d.Log)}
+	if s.pages, err = parsePages(d.Templates); err != nil {
+		return nil, err
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.inicio)
 	for i := range modules {
 		m := modules[i]
+		if reg := moduleRegistry[m.Slug]; reg != nil {
+			// The module's own routes and page (see registro.go).
+			if err := s.mountModule(mux, m, reg); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		mux.HandleFunc("GET "+m.Path(), func(w http.ResponseWriter, r *http.Request) { s.modulo(w, r, &m) })
 	}
 	mux.HandleFunc("POST /destino", s.seleccionarDestino)
@@ -111,6 +119,86 @@ func NewHandler(d Deps) (http.Handler, error) {
 	mux.HandleFunc("GET /", s.noEncontrada)
 
 	return securityHeaders(onlyHosts(hosts, sameOrigin(mux))), nil
+}
+
+// parsePages parses every page in templates/: each templates/<name>.html (except layout.html
+// and partials) together with the layout and every partial templates/_*.html. New pages and
+// partials are picked up without changing code.
+//
+// Mistakes fail at startup instead of on the first request: a page without a "content"
+// block, a partial that defines "content" or "layout", and a page that redefines a name
+// owned by the layout or a partial (it would silently replace it on that page).
+func parsePages(templates fs.FS) (map[string]*template.Template, error) {
+	files, err := fs.Glob(templates, "templates/*.html")
+	if err != nil {
+		return nil, err
+	}
+	shared := []string{"templates/layout.html"}
+	var pages []string
+	for _, f := range files {
+		switch base := path.Base(f); {
+		case base == "layout.html":
+		case strings.HasPrefix(base, "_"):
+			shared = append(shared, f)
+		default:
+			pages = append(pages, f)
+		}
+	}
+
+	owned := map[string]string{} // template name -> file that defines it
+	for _, f := range shared {
+		names, err := definedNames(templates, f)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range names {
+			if f != "templates/layout.html" && (n == "content" || n == "layout") {
+				return nil, fmt.Errorf("partial %s must not define %q", f, n)
+			}
+			owned[n] = f
+		}
+	}
+
+	out := make(map[string]*template.Template, len(pages))
+	for _, p := range pages {
+		names, err := definedNames(templates, p)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range names {
+			if other, ok := owned[n]; ok {
+				return nil, fmt.Errorf("page %s redefines %q, already defined in %s", p, n, other)
+			}
+		}
+		t, err := template.New("").Funcs(templateFuncs).ParseFS(templates, append(shared, p)...)
+		if err != nil {
+			return nil, fmt.Errorf("parsing template %s: %w", p, err)
+		}
+		if !slices.Contains(names, "content") {
+			return nil, fmt.Errorf("page %s must define {{define \"content\"}}", p)
+		}
+		out[path.Base(p)] = t
+	}
+	return out, nil
+}
+
+// definedNames lists the {{define}} blocks of one template file.
+func definedNames(templates fs.FS, file string) ([]string, error) {
+	src, err := fs.ReadFile(templates, file)
+	if err != nil {
+		return nil, err
+	}
+	t, err := template.New(file).Funcs(templateFuncs).Parse(string(src))
+	if err != nil {
+		return nil, fmt.Errorf("parsing template %s: %w", file, err)
+	}
+	var names []string
+	for _, d := range t.Templates() {
+		if d.Name() != file {
+			names = append(names, d.Name())
+		}
+	}
+	return names, nil
 }
 
 // allowedHosts returns the Host header values that address this console: the listen
@@ -161,7 +249,7 @@ func (s *server) newView(r *http.Request, title, active string) view {
 // diagnostico runs "hostname" on the current target to check that its channel works.
 func (s *server) diagnostico(w http.ResponseWriter, r *http.Request) {
 	cur := s.state.Current()
-	e, err := s.runner.Run(r.Context(), operacion.Plan{
+	s.runAndShow(w, r, operacion.Plan{
 		Action:   "Probar conexión",
 		Target:   cur.Name,
 		Commands: []executor.Command{{Name: "hostname"}},
@@ -169,15 +257,6 @@ func (s *server) diagnostico(w http.ResponseWriter, r *http.Request) {
 			return "La VM respondió como «" + strings.TrimSpace(res[0].Stdout) + "». El canal de comunicación funciona."
 		},
 	})
-	if err != nil {
-		log.Printf("diagnostico: %v", err)
-		if e.ID == "" { // nothing ran
-			http.Error(w, "No se pudo ejecutar la operación. Revisa el registro de la consola en la terminal.", http.StatusInternalServerError)
-			return
-		}
-		// The command ran but the log could not be written: still show its result.
-	}
-	http.Redirect(w, r, "/resultado/"+e.ID, http.StatusSeeOther)
 }
 
 // resultado shows one operation: the outcome for the user and the terminal with every step.

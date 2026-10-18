@@ -166,8 +166,9 @@ func TestClosingTheBrowserDoesNotCancelTheOperation(t *testing.T) {
 
 func TestUnknownTargetIsAnError(t *testing.T) {
 	r, _ := setup(t, &executor.Fake{})
-	if _, err := r.Run(context.Background(), Plan{Action: "x", Target: "otra", Commands: []executor.Command{cmd("hostname")}}); err == nil {
-		t.Fatal("expected an error for an unknown target")
+	_, err := r.Run(context.Background(), Plan{Action: "x", Target: "otra", Commands: []executor.Command{cmd("hostname")}})
+	if !errors.Is(err, ErrUnknownTarget) {
+		t.Fatalf("err = %v, want ErrUnknownTarget", err)
 	}
 }
 
@@ -231,5 +232,32 @@ func TestLogWriteFailureStillReturnsTheEntry(t *testing.T) {
 	e, err := r.Run(context.Background(), Plan{Action: "x", Target: "pruebas", Commands: []executor.Command{cmd("hostname")}})
 	if err == nil || e.ID == "" || !e.NotSaved || !e.OK {
 		t.Fatalf("entry = %+v, err = %v: the result must reach the user even if the log fails", e, err)
+	}
+}
+
+func TestAlsoOKExitCodesAreNotFailures(t *testing.T) {
+	// `systemctl status` exits 3 for a stopped unit: a state, not an error.
+	f := &executor.Fake{RunFunc: func(executor.Command) (executor.Result, error) {
+		return executor.Result{Stdout: "inactive (dead)", ExitCode: 3}, nil
+	}}
+	r, _ := setup(t, f)
+	e, _ := r.Run(context.Background(), Plan{Action: "Estado", Target: "pruebas", Commands: []executor.Command{cmd("systemctl", "status", "x")}, AlsoOK: []int{3}})
+	if !e.OK {
+		t.Fatalf("exit 3 listed in AlsoOK must count as success: %+v", e)
+	}
+	e, _ = r.Run(context.Background(), Plan{Action: "Estado", Target: "pruebas", Commands: []executor.Command{cmd("systemctl", "status", "x")}})
+	if e.OK {
+		t.Fatal("without AlsoOK, exit 3 is a failure")
+	}
+}
+
+func TestAlsoOKDoesNotHideChannelErrors(t *testing.T) {
+	f := &executor.Fake{RunFunc: func(executor.Command) (executor.Result, error) {
+		return executor.Result{ExitCode: 3}, errors.New("ssh: connection refused")
+	}}
+	r, _ := setup(t, f)
+	e, _ := r.Run(context.Background(), Plan{Action: "x", Target: "pruebas", Commands: []executor.Command{cmd("systemctl")}, AlsoOK: []int{3}})
+	if e.OK {
+		t.Fatal("a channel error is a failure even if its exit code is in AlsoOK")
 	}
 }
