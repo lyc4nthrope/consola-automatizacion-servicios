@@ -196,3 +196,18 @@ func TestFakeName(t *testing.T) {
 		t.Fatalf("Name = %q", got)
 	}
 }
+
+func TestNewSimulated(t *testing.T) {
+	f := NewSimulated("pruebas")
+	if f.Name() != "Simulado" {
+		t.Fatalf("Name = %q", f.Name())
+	}
+	res, err := f.Run(context.Background(), Command{Name: "hostname"})
+	if err != nil || res.Stdout != "pruebas\n" || res.ExitCode != 0 {
+		t.Fatalf("hostname = %+v, %v", res, err)
+	}
+	res, _ = f.Run(context.Background(), Command{Name: "apt-get", Args: []string{"install", "-y", "tree"}})
+	if res.Stdout != "(simulación) apt-get install -y tree\n" {
+		t.Fatalf("other command = %q", res.Stdout)
+	}
+}

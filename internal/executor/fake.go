@@ -83,3 +83,18 @@ func (f *Fake) CopyFrom(_ context.Context, remotePath, localPath string) error {
 	f.copies = append(f.copies, Copy{ToVM: false, Local: localPath, Remote: remotePath})
 	return f.CopyErr
 }
+
+// NewSimulated returns a Fake that behaves like a healthy VM named hostname: "hostname"
+// prints it and any other command succeeds and echoes what would have run. It lets the
+// team develop and demo the interface without a VM (consola -simular).
+func NewSimulated(hostname string) *Fake {
+	return &Fake{
+		NameValue: "Simulado",
+		RunFunc: func(c Command) (Result, error) {
+			if c.Name == "hostname" && len(c.Args) == 0 {
+				return Result{Stdout: hostname + "\n"}, nil
+			}
+			return Result{Stdout: "(simulación) " + c.String() + "\n"}, nil
+		},
+	}
+}
