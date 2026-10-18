@@ -11,6 +11,9 @@ config.local.json
 # Runtime output
 logs/
 
+# Applications to deploy from the console (Part C), kept local
+/aplicaciones/
+
 # Build output
 /consola
 /bin/
