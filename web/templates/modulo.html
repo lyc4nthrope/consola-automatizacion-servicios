@@ -1,0 +1,25 @@
+{{define "content"}}
+<header class="page-head">
+  <p class="eyebrow"><i class="bi {{.Module.Icon}}" aria-hidden="true"></i> Módulo</p>
+  <h1>{{.Module.Title}}</h1>
+  <p class="lead-c">{{.Module.Summary}}</p>
+</header>
+
+<section class="block" aria-labelledby="acciones-titulo">
+  <h2 id="acciones-titulo" class="block-title">Acciones</h2>
+  <ul class="actions">
+    {{- range .Module.Actions}}
+    <li class="action">
+      <span>{{.}}</span>
+      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
+    </li>
+    {{- end}}
+  </ul>
+</section>
+
+<div class="empty">
+  <i class="bi bi-cone-striped empty-icon" aria-hidden="true"></i>
+  <p class="empty-title">Este módulo está en construcción</p>
+  <p class="empty-text">Las acciones se habilitarán a medida que se completen. Mientras tanto, puedes volver al <a href="/">panel</a>.</p>
+</div>
+{{end}}

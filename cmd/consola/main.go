@@ -26,11 +26,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	srv := &http.Server{
-		Addr:              cfg.Listen,
-		Handler:           web.NewHandler(assets.Static),
-		ReadHeaderTimeout: 10 * time.Second,
+	handler, err := web.NewHandler(assets.Static, assets.Templates, app.NewState(cfg), cfg.Listen)
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	srv := newServer(cfg.Listen, handler)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -47,5 +48,17 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("cierre forzado: %v", err)
+	}
+}
+
+// newServer sets read and idle limits so slow or abandoned connections cannot pile up.
+// There is no WriteTimeout on purpose: an apt operation may take minutes before the response.
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 }

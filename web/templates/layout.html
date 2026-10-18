@@ -1,0 +1,103 @@
+{{define "layout" -}}
+<!doctype html>
+<html lang="es" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1117">
+  <title>{{.Title}} · Consola de automatización</title>
+  <script src="/static/js/tema.js"></script>
+  <link rel="stylesheet" href="/static/vendor/bootstrap/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/static/css/consola.css">
+</head>
+<body>
+  <a class="visually-hidden-focusable skip-link" href="#contenido">Saltar al contenido</a>
+
+  <div class="app">
+    <aside class="offcanvas-lg offcanvas-start sidebar" tabindex="-1" id="menu" aria-labelledby="menu-titulo">
+      <div class="sidebar-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"><i class="bi bi-cloud-fill"></i></span>
+          <div>
+            <p class="brand-name" id="menu-titulo" translate="no">consola</p>
+            <p class="brand-sub">Automatización de servicios</p>
+          </div>
+          <button type="button" class="btn-close d-lg-none ms-auto" data-bs-dismiss="offcanvas" data-bs-target="#menu" aria-label="Cerrar menú"></button>
+        </div>
+
+        <nav aria-label="Secciones">
+          <ul class="nav-list">
+            <li>
+              <a class="nav-link-c" href="/"{{if eq .Active ""}} aria-current="page"{{end}}>
+                <i class="bi bi-grid-1x2" aria-hidden="true"></i><span>Panel</span>
+              </a>
+            </li>
+          </ul>
+          <p class="nav-heading">Módulos</p>
+          <ul class="nav-list">
+            {{- range .Modules}}
+            <li>
+              <a class="nav-link-c" href="{{.Path}}"{{if eq $.Active .Slug}} aria-current="page"{{end}}>
+                <i class="bi {{.Icon}}" aria-hidden="true"></i><span>{{.Title}}</span>
+              </a>
+            </li>
+            {{- end}}
+          </ul>
+        </nav>
+
+        <footer class="sidebar-foot">
+          <p class="mb-1">Computación en la Nube 2026-2</p>
+          <p class="mb-2">Universidad del Quindío</p>
+          <ul class="team">
+            <li>Cristhian Osorio</li>
+            <li>Daniel Perez</li>
+            <li>Wiliam Carmona</li>
+          </ul>
+        </footer>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="btn btn-icon d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#menu" aria-controls="menu" aria-label="Abrir menú">
+          <i class="bi bi-list" aria-hidden="true"></i>
+        </button>
+
+        <p class="target">
+          <span class="visually-hidden">Destino actual:</span>
+          <span class="dot {{if eq .Channel "Sin conexión"}}dot-off{{else}}dot-on{{end}}" aria-hidden="true"></span>
+          <span class="target-name" translate="no">{{.Current.Name}}</span>
+          <span class="target-sep" aria-hidden="true">·</span>
+          <span class="mono target-ip" translate="no">{{.Current.IP}}</span>
+          <span class="target-sep" aria-hidden="true">·</span>
+          <span class="target-channel">{{.Channel}}</span>
+        </p>
+
+        <form class="target-form" method="post" action="/destino">
+          <input type="hidden" name="volver" value="{{.Path}}">
+          <label class="visually-hidden" for="destino">Cambiar destino</label>
+          <select class="form-select form-select-sm" id="destino" name="destino" autocomplete="off">
+            {{- range .Targets}}
+            <option value="{{.Name}}"{{if eq .Name $.Current.Name}} selected{{end}}>{{.Name}}</option>
+            {{- end}}
+          </select>
+          <button class="btn btn-sm btn-outline-accent" type="submit">Usar destino</button>
+        </form>
+
+        <button class="btn btn-icon" type="button" id="cambiar-tema" aria-label="Cambiar a tema claro" title="Cambiar a tema claro">
+          <i class="bi bi-sun" aria-hidden="true"></i>
+        </button>
+      </header>
+
+      <main id="contenido" class="content" tabindex="-1">
+        {{template "content" .}}
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="/static/js/consola.js"></script>
+</body>
+</html>
+{{- end}}

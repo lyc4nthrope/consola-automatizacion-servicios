@@ -1,0 +1,57 @@
+{{define "content"}}
+<header class="page-head">
+  <p class="eyebrow">Consola de automatización de servicios</p>
+  <h1>Panel</h1>
+  <p class="lead-c">Administra una VM Debian sin entrar a ella: cada acción se valida, se ejecuta y queda registrada con su resultado.</p>
+</header>
+
+<section class="block" aria-labelledby="destino-titulo">
+  <h2 id="destino-titulo" class="block-title">Destino actual</h2>
+  <dl class="facts">
+    <div><dt>Nombre</dt><dd translate="no">{{.Current.Name}}</dd></div>
+    <div><dt>Máquina virtual</dt><dd class="mono" translate="no">{{.Current.VM}}</dd></div>
+    <div><dt>Dirección IP</dt><dd class="mono" translate="no">{{.Current.IP}}</dd></div>
+    <div><dt>Usuario SSH</dt><dd class="mono" translate="no">{{if .Current.SSHUser}}{{.Current.SSHUser}}{{else}}—{{end}}</dd></div>
+    <div>
+      <dt>Canal</dt>
+      <dd>
+        {{if eq .Channel "Sin conexión"}}
+        <span class="badge-c badge-warn"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Sin conexión</span>
+        {{else}}
+        <span class="badge-c badge-ok"><i class="bi bi-circle-fill" aria-hidden="true"></i> {{.Channel}}</span>
+        {{end}}
+      </dd>
+    </div>
+  </dl>
+</section>
+
+<section class="block" aria-labelledby="modulos-titulo">
+  <h2 id="modulos-titulo" class="block-title">Módulos</h2>
+  <ul class="modules">
+    {{- range .Modules}}
+    <li>
+      <a class="module" href="{{.Path}}">
+        <span class="module-icon" aria-hidden="true"><i class="bi {{.Icon}}"></i></span>
+        <span class="module-body">
+          <span class="module-title">{{.Title}}</span>
+          <span class="module-summary">{{.Summary}}</span>
+          <span class="module-actions">
+            {{- range .Actions}}<span class="chip">{{.}}</span>{{end -}}
+          </span>
+        </span>
+        <i class="bi bi-arrow-right module-go" aria-hidden="true"></i>
+      </a>
+    </li>
+    {{- end}}
+  </ul>
+</section>
+
+<section class="block" aria-labelledby="actividad-titulo">
+  <h2 id="actividad-titulo" class="block-title">Últimas operaciones</h2>
+  <div class="empty">
+    <i class="bi bi-terminal empty-icon" aria-hidden="true"></i>
+    <p class="empty-title">Aún no hay operaciones</p>
+    <p class="empty-text">Cuando ejecutes una acción, aparecerá aquí con su comando, su resultado y su duración.</p>
+  </div>
+</section>
+{{end}}
