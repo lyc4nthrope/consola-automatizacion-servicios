@@ -103,7 +103,16 @@ consola/
 
 **Reglas de trabajo:**
 
-- Un repositorio Git privado. Cada parte trabaja en su rama (`parte-a/...`, `parte-b/...`, `parte-c/...`) y hace merge a `main` al cerrar cada fase.
+- Repositorio Git público con **solo cinco ramas**, sin ramas temporales:
+
+  | Rama | Para qué |
+  |---|---|
+  | `cristhian`, `daniel`, `wiliam` | Trabajo diario de cada persona; solo la toca su dueño |
+  | `dev` | Cambios listos para revisar e integrar; aquí se junta el trabajo de los tres |
+  | `main` | Versión estable y entregable; solo recibe `dev` cuando todo lo integrado funciona |
+
+- Flujo: se trabaja en la rama propia → al terminar una fase verificada, se sube a `dev` para revisión → `dev` pasa a `main` en los hitos (base del lunes 19, integración del jueves 22, entrega).
+- Antes de empezar cada fase, cada quien actualiza su rama con lo último de `dev`.
 - Mensajes de commit convencionales (`feat:`, `fix:`, `docs:`).
 - Una fase está **terminada** solo cuando su criterio de verificación pasa contra la VM real y hay commit.
 - `logs/`, `keys/` y cualquier llave privada van en `.gitignore`.

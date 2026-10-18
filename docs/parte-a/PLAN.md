@@ -85,7 +85,7 @@ consola/
 1. `gofmt -l .` sin salida, `go vet ./...` y `go test ./...` en verde.
 2. El criterio de verificación de la fase, probado de verdad (contra la VM cuando aplica).
 3. Si la fase tocó pantallas: revisión con la skill `web-design-guidelines` sobre esas plantillas y hallazgos corregidos.
-4. Commit convencional en la rama `parte-a/<fase>` y merge a `main`.
+4. Commit convencional en la rama `cristhian` y merge a `dev` para revisión (flujo de ramas en el plan general, §3).
 
 | Fase | Objetivo | Alcance | Decisiones | Terminada cuando | Fecha | Estado |
 |---|---|---|---|---|---|---|
