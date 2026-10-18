@@ -120,7 +120,7 @@ Puntos de esfuerzo: 1 = tarea sencilla de pocas horas, 3 = la parte más difíci
 | B | Seguridad y usuarios | Adaptador `SSH` + bootstrap (4) | Llaves root, crear y eliminar usuarios (6) | Consolidar el documento (1) | 11 |
 | C | Servicios e infraestructura | Despliegue systemd (5) | Script de fecha, HAProxy (4) | Entorno de VMs + diagrama (2) | 11 |
 
-Responsables (lo decide el equipo): **A:** ________ · **B:** ________ · **C:** Wiliam Carmona
+Responsables (lo decide el equipo): **A:** Cristhian Osorio · **B:** Daniel Perez · **C:** Wiliam Carmona
 
 ---
 
@@ -138,6 +138,15 @@ Es la base sobre la que corren los demás módulos y cubre el §3.1 del enunciad
 | A6 | Hostname + `/etc/hosts` (3.1.4) | `hostnamectl set-hostname <nombre>` y reemplazar la línea `127.0.1.1` de `/etc/hosts`. Sin esa línea, `sudo` tarda porque no resuelve el nombre propio | `hostname` y `cat /etc/hosts` muestran el nombre nuevo | 1 | ⬜ |
 
 **Depende de:** nada (es la base). **Le entrega a B y C:** layout, `validate`, `oplog`, página de resultado (A1 y A3 deben estar en `main` el **lunes 19**).
+
+**Calidad del front (dos revisiones con distinto alcance):**
+
+| Cuándo | Herramienta | Qué revisa | Por qué en ese momento |
+|---|---|---|---|
+| Al cerrar A1 y cada pantalla (A4, A5, A6) | Skill `web-design-guidelines` | Los archivos de esa pantalla: etiquetas de formularios, errores junto al campo, estado de "procesando", foco visible, confirmación antes de acciones destructivas, mensajes de error con el siguiente paso | Lo que se corrige en el layout y la página de resultado lo heredan B y C; corregirlo tarde obliga a tocar todas las pantallas |
+| Una vez, el jueves 22 (integración), con las pantallas de A, B y C ya hechas | Skill `frontend-ux-audit` | Todo el front y la app funcionando en el navegador (escritorio y móvil): consistencia entre módulos, jerarquía visual, flujos completos | Solo tiene sentido con todas las pantallas existentes; antes sería auditar algo a medias |
+
+Los hallazgos de cada revisión se corrigen dentro de la misma fase, antes de marcarla ✅.
 
 ---
 
