@@ -20,6 +20,15 @@
   --c-warn-soft: rgba(161, 98, 7, 0.12);
   --c-ok-soft: rgba(21, 128, 61, 0.12);
   --c-focus: #0f766e;
+  --c-fail: #b91c1c;
+  --c-fail-soft: rgba(185, 28, 28, 0.1);
+  --c-grid: rgba(23, 32, 42, 0.045);
+  --c-term-bg: #0f1720;
+  --c-term-bar: #16212c;
+  --c-term-text: #d6e2ea;
+  --c-term-muted: #7f93a3;
+  --c-term-accent: #5eead4;
+  --c-term-err: #fca5a5;
 
   --bs-body-bg: var(--c-bg);
   --bs-body-color: var(--c-text);
@@ -45,6 +54,15 @@
   --c-warn-soft: rgba(251, 191, 36, 0.12);
   --c-ok-soft: rgba(74, 222, 128, 0.12);
   --c-focus: #5eead4;
+  --c-fail: #f87171;
+  --c-fail-soft: rgba(248, 113, 113, 0.12);
+  --c-grid: rgba(219, 227, 234, 0.035);
+  --c-term-bg: #070a0e;
+  --c-term-bar: #10161d;
+  --c-term-text: #d6e2ea;
+  --c-term-muted: #7f93a3;
+  --c-term-accent: #5eead4;
+  --c-term-err: #fca5a5;
 
   --bs-body-bg: var(--c-bg);
   --bs-body-color: var(--c-text);
@@ -61,8 +79,9 @@
 
 /* ---------- Base ---------- */
 html {
-  /* Keep the focused element visible below the sticky topbar when tabbing. */
+  /* Keep the focused element visible between the sticky topbar and status bar when tabbing. */
   scroll-padding-top: 5rem;
+  scroll-padding-bottom: 3rem;
 }
 
 a,
@@ -122,10 +141,21 @@ h2 {
   }
 }
 
+/* Main column: a faint blueprint grid behind the content, fading towards the bottom. */
 .main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  background-image:
+    linear-gradient(var(--c-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-grid) 1px, transparent 1px);
+  background-size: 2rem 2rem;
+  background-position: -1px -1px;
+}
+
+.content {
+  flex: 1;
 }
 
 .content {
@@ -662,4 +692,400 @@ h2 {
   .module:hover .module-go {
     transform: none;
   }
+}
+
+/* ---------- Block header with an action ---------- */
+.block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.block-head .block-title {
+  margin: 0;
+}
+
+.badge-fail {
+  background: var(--c-fail-soft);
+  color: var(--c-fail);
+}
+
+/* ---------- Recent operations ---------- */
+.ops {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  background: var(--c-surface);
+}
+
+.ops li + li {
+  border-top: 1px solid var(--c-border);
+}
+
+.op {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 1rem;
+  color: var(--c-text);
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.op:hover {
+  background: var(--c-surface-2);
+}
+
+.op-action {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.op-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 575.98px) {
+  .op {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.25rem 0.75rem;
+  }
+
+  .op-meta {
+    grid-column: 2;
+    font-size: 0.8rem;
+  }
+}
+
+/* ---------- Result page ---------- */
+.meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+}
+
+.eyebrow a {
+  color: inherit;
+}
+
+.outcome {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 2rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid;
+  border-left-width: 4px;
+  border-radius: var(--c-radius);
+  background: var(--c-surface);
+}
+
+.outcome-ok {
+  border-color: var(--c-ok);
+}
+
+.outcome-fail {
+  border-color: var(--c-fail);
+}
+
+.outcome-icon {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.outcome-ok .outcome-icon {
+  color: var(--c-ok);
+}
+
+.outcome-fail .outcome-icon {
+  color: var(--c-fail);
+}
+
+.outcome-title {
+  margin: 0 0 0.2rem;
+  font-weight: 700;
+}
+
+.outcome-text {
+  margin: 0;
+  color: var(--c-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Terminal (always dark, in both themes) ---------- */
+.terminal {
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  background: var(--c-term-bg);
+  color: var(--c-term-text);
+  font-family: var(--c-mono);
+  font-size: 0.85rem;
+}
+
+.terminal-bar,
+.terminal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 0.85rem;
+  background: var(--c-term-bar);
+  color: var(--c-term-muted);
+}
+
+.terminal-bar {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.terminal-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.terminal-dots {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.terminal-dots span {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.terminal-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.terminal-copy {
+  --bs-btn-color: var(--c-term-text);
+  --bs-btn-border-color: rgba(255, 255, 255, 0.16);
+  --bs-btn-hover-color: var(--c-term-bg);
+  --bs-btn-hover-bg: var(--c-term-accent);
+  --bs-btn-hover-border-color: var(--c-term-accent);
+  --bs-btn-active-color: var(--c-term-bg);
+  --bs-btn-active-bg: var(--c-term-accent);
+  font-family: var(--c-mono);
+}
+
+.terminal-copy:focus-visible {
+  outline-color: var(--c-term-accent);
+}
+
+.terminal-body {
+  max-height: 32rem;
+  overflow: auto;
+  padding: 0.85rem;
+  overscroll-behavior: contain;
+}
+
+.t-step + .t-step {
+  margin-top: 1rem;
+}
+
+.t-cmd {
+  margin: 0 0 0.35rem;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.t-prompt {
+  margin-right: 0.35rem;
+  color: var(--c-term-accent);
+  font-weight: 700;
+}
+
+.t-out {
+  margin: 0 0 0.35rem;
+  color: var(--c-term-text);
+  font-size: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.t-err {
+  color: var(--c-term-err);
+}
+
+.t-meta,
+.t-empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--c-term-muted);
+}
+
+.t-meta-ok {
+  color: #86efac;
+}
+
+.t-meta-fail {
+  color: var(--c-term-err);
+}
+
+.terminal-foot .badge-ok {
+  background: rgba(74, 222, 128, 0.14);
+  color: #86efac;
+}
+
+.terminal-foot .badge-fail {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--c-term-err);
+}
+
+.terminal-id {
+  margin-left: auto;
+  font-size: 0.75rem;
+}
+
+/* ---------- Status bar ---------- */
+.statusbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1010;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1.25rem;
+  min-height: 2rem;
+  padding: 0.3rem 1.5rem;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-sidebar);
+  color: var(--c-muted);
+  font-size: 0.75rem;
+}
+
+.sb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.sb-item .dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  box-shadow: none;
+}
+
+.sb-last {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sb-last:hover {
+  color: var(--c-text);
+  text-decoration: underline;
+}
+
+.sb-ok {
+  color: var(--c-ok);
+}
+
+.sb-fail {
+  color: var(--c-fail);
+}
+
+.sb-running {
+  color: var(--c-accent);
+  font-weight: 600;
+}
+
+.sb-running:empty,
+.sb-timer:empty {
+  display: none;
+}
+
+.sb-timer {
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-version {
+  margin-left: auto;
+}
+
+/* On phones the bar keeps one line: target, channel and the running indicator. */
+@media (max-width: 575.98px) {
+  .statusbar {
+    padding: 0.3rem 1rem;
+  }
+
+  .sb-last,
+  .sb-version {
+    display: none;
+  }
+}
+
+/* ---------- Running indicator ---------- */
+.running-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  height: 2px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.is-running .running-bar {
+  opacity: 1;
+}
+
+.running-bar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: var(--c-accent);
+  animation: running 1.2s ease-in-out infinite;
+}
+
+@keyframes running {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .running-bar::before {
+    width: 100%;
+  }
+}
+
+.notice-warn {
+  display: flex;
+  gap: 0.5rem;
+  margin: -1rem 0 2rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--c-radius);
+  background: var(--c-warn-soft);
+  color: var(--c-warn);
 }

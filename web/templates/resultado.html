@@ -1,0 +1,63 @@
+{{define "content"}}
+{{with .Entry}}
+<header class="page-head">
+  <p class="eyebrow"><a href="/">Panel</a> <span aria-hidden="true">/</span> Resultado</p>
+  <h1>{{.Action}}</h1>
+  <p class="lead-c meta-line">
+    <span><i class="bi bi-hdd-network" aria-hidden="true"></i> <span translate="no">{{.Target}}</span></span>
+    <span><i class="bi bi-arrow-left-right" aria-hidden="true"></i> {{.Channel}}</span>
+    <span><i class="bi bi-clock" aria-hidden="true"></i> <time class="mono" datetime="{{.Time.Format "2006-01-02T15:04:05Z07:00"}}">{{fecha .Time}}</time></span>
+  </p>
+</header>
+
+<div class="outcome {{if .OK}}outcome-ok{{else}}outcome-fail{{end}}" role="status">
+  <i class="bi {{if .OK}}bi-check-circle-fill{{else}}bi-x-octagon-fill{{end}} outcome-icon" aria-hidden="true"></i>
+  <div>
+    <p class="outcome-title">{{if .OK}}Operación exitosa{{else}}La operación falló{{end}}</p>
+    <p class="outcome-text">{{.Message}}</p>
+  </div>
+</div>
+
+{{if .NotSaved}}
+<p class="notice-warn"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Esta operación sí se ejecutó, pero no se pudo guardar en el registro (disco lleno o sin permisos). Copia la salida si la necesitas y revisa la terminal de la consola.</p>
+{{end}}
+<section class="block" aria-labelledby="salida-titulo">
+  <h2 id="salida-titulo" class="block-title">Salida técnica</h2>
+  <div class="terminal">
+    <div class="terminal-bar">
+      <span class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span class="terminal-title mono" translate="no">{{.Target}} · {{.Channel}}</span>
+      <button type="button" class="btn btn-sm terminal-copy" data-copiar="salida">
+        <i class="bi bi-clipboard" aria-hidden="true"></i> Copiar salida
+      </button>
+    </div>
+    <div class="terminal-body" id="salida" translate="no" tabindex="0" role="region" aria-label="Salida de los comandos">
+      {{- range .Steps}}
+      <div class="t-step">
+        <p class="t-cmd"><span class="t-prompt" aria-hidden="true">$</span> {{.Cmd}}</p>
+        {{- if .Stdout}}<pre class="t-out">{{.Stdout}}</pre>{{end}}
+        {{- if .Stderr}}<pre class="t-out t-err">{{.Stderr}}</pre>{{end}}
+        {{- if .Error}}<pre class="t-out t-err">error del canal: {{.Error}}</pre>{{end}}
+        <p class="t-meta {{if and (eq .ExitCode 0) (not .Error)}}t-meta-ok{{else}}t-meta-fail{{end}}">
+          ↳ código {{.ExitCode}} · {{ms .DurationMS}}{{if .Truncated}} · salida recortada a 64 KB{{end}}
+        </p>
+      </div>
+      {{- else}}
+      <p class="t-empty">No se ejecutó ningún comando.</p>
+      {{- end}}
+    </div>
+    <div class="terminal-foot">
+      <span class="badge-c {{if .OK}}badge-ok{{else}}badge-fail{{end}}">
+        <i class="bi {{if .OK}}bi-check-lg{{else}}bi-x-lg{{end}}" aria-hidden="true"></i>
+        {{if .OK}}Éxito{{else}}Falló{{end}}
+      </span>
+      <span class="mono">{{len .Steps}} {{if eq (len .Steps) 1}}comando{{else}}comandos{{end}} · {{dur .Duration}}</span>
+      <span class="mono terminal-id" translate="no">id {{.ID}}</span>
+    </div>
+  </div>
+  <p class="visually-hidden" aria-live="polite" id="aviso-copia"></p>
+</section>
+
+<a class="btn btn-accent" href="/"><i class="bi bi-grid-1x2" aria-hidden="true"></i> Volver al panel</a>
+{{end}}
+{{end}}

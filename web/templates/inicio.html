@@ -6,7 +6,12 @@
 </header>
 
 <section class="block" aria-labelledby="destino-titulo">
-  <h2 id="destino-titulo" class="block-title">Destino actual</h2>
+  <div class="block-head">
+    <h2 id="destino-titulo" class="block-title">Destino actual</h2>
+    <form method="post" action="/diagnostico" data-operacion="Probar conexión">
+      <button class="btn btn-sm btn-accent" type="submit"><i class="bi bi-activity" aria-hidden="true"></i> Probar conexión</button>
+    </form>
+  </div>
   <dl class="facts">
     <div><dt>Nombre</dt><dd translate="no">{{.Current.Name}}</dd></div>
     <div><dt>Máquina virtual</dt><dd class="mono" translate="no">{{.Current.VM}}</dd></div>
@@ -48,10 +53,30 @@
 
 <section class="block" aria-labelledby="actividad-titulo">
   <h2 id="actividad-titulo" class="block-title">Últimas operaciones</h2>
+  {{- if .Recent}}
+  <ol class="ops">
+    {{- range .Recent}}
+    <li>
+      <a class="op" href="/resultado/{{.ID}}">
+        <span class="badge-c {{if .OK}}badge-ok{{else}}badge-fail{{end}}">
+          <i class="bi {{if .OK}}bi-check-lg{{else}}bi-x-lg{{end}}" aria-hidden="true"></i>{{if .OK}}Éxito{{else}}Falló{{end}}
+        </span>
+        <span class="op-action">{{.Action}}</span>
+        <span class="op-meta mono">
+          <span translate="no">{{.Target}}</span>
+          <time datetime="{{.Time.Format "2006-01-02T15:04:05Z07:00"}}">{{hora .Time}}</time>
+          <span>{{dur .Duration}}</span>
+        </span>
+      </a>
+    </li>
+    {{- end}}
+  </ol>
+  {{- else}}
   <div class="empty">
     <i class="bi bi-terminal empty-icon" aria-hidden="true"></i>
     <p class="empty-title">Aún no hay operaciones</p>
-    <p class="empty-text">Cuando ejecutes una acción, aparecerá aquí con su comando, su resultado y su duración.</p>
+    <p class="empty-text">Cuando ejecutes una acción, aparecerá aquí con su comando, su resultado y su duración. Empieza con <strong>Probar conexión</strong>.</p>
   </div>
+  {{- end}}
 </section>
 {{end}}

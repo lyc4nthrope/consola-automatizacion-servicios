@@ -11,6 +11,7 @@ import (
 
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/app"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/executor"
+	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/oplog"
 	assets "github.com/lyc4nthrope/consola-automatizacion-servicios/web"
 )
 
@@ -23,11 +24,22 @@ func newTestState() *app.State {
 
 func newTestHandler(t *testing.T, state *app.State) http.Handler {
 	t.Helper()
-	h, err := NewHandler(assets.Static, assets.Templates, state, testListen)
+	h, _ := newTestHandlerWithLog(t, state)
+	return h
+}
+
+func newTestHandlerWithLog(t *testing.T, state *app.State) (http.Handler, *oplog.Log) {
+	t.Helper()
+	log, err := oplog.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { log.Close() })
+	h, err := NewHandler(Deps{Static: assets.Static, Templates: assets.Templates, State: state, Log: log, Listen: testListen})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
-	return h
+	return h, log
 }
 
 const testListen = "127.0.0.1:8090"
@@ -292,7 +304,7 @@ func TestRequestsForOtherHostsAreRefused(t *testing.T) {
 }
 
 func TestNewHandlerRejectsInvalidListen(t *testing.T) {
-	if _, err := NewHandler(assets.Static, assets.Templates, newTestState(), "127.0.0.1"); err == nil {
+	if _, err := NewHandler(Deps{Static: assets.Static, Templates: assets.Templates, State: newTestState(), Listen: "127.0.0.1"}); err == nil {
 		t.Fatal("expected an error for a listen address without port")
 	}
 }
@@ -397,5 +409,172 @@ func TestSelectTargetRejectsOversizedForms(t *testing.T) {
 	}
 	if got := state.Current().Name; got != "pruebas" {
 		t.Fatalf("an oversized request changed the target to %q", got)
+	}
+}
+
+// runDiagnostic posts "Probar conexión" and returns the result page it redirects to.
+func runDiagnostic(t *testing.T, h http.Handler) (location string, page string) {
+	t.Helper()
+	rec := serve(t, h, postForm("/diagnostico", url.Values{}))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /diagnostico: status = %d, want 303", rec.Code)
+	}
+	location = rec.Header().Get("Location")
+	if !regexp.MustCompile(`^/resultado/[0-9a-f]{16}$`).MatchString(location) {
+		t.Fatalf("Location = %q, want /resultado/<id>", location)
+	}
+	res := serve(t, h, httptest.NewRequest(http.MethodGet, location, nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("GET %s: status = %d, want 200", location, res.Code)
+	}
+	return location, body(res)
+}
+
+func TestDiagnosticShowsTheTerminalResult(t *testing.T) {
+	state := newTestState()
+	_ = state.SetExecutor("pruebas", executor.NewSimulated("host-simulado"))
+	h, log := newTestHandlerWithLog(t, state)
+	location, page := runDiagnostic(t, h)
+
+	for _, want := range []string{
+		"Probar conexión",      // action as the page title
+		"Operación exitosa",    // outcome in words, not only color
+		"La VM respondió como", // message for the user
+		`class="terminal`,      // terminal panel
+		`<p class="t-cmd"><span class="t-prompt" aria-hidden="true">$</span> hostname</p>`, // command that ran
+		`<pre class="t-out">host-simulado`,                                                 // its output, inside the terminal
+		"código 0",                                                                         // exit code
+		`data-copiar="salida"`,                                                             // copy button
+		`id="salida" translate="no" tabindex="0" role="region" aria-label="Salida de los comandos"`, // scrollable output reachable by keyboard
+		`aria-live="polite"`, // announces "copied"
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("result page is missing %q", want)
+		}
+	}
+	id := strings.TrimPrefix(location, "/resultado/")
+	if _, ok := log.Get(id); !ok {
+		t.Fatal("the diagnostic must be stored in the operation log")
+	}
+}
+
+func TestDiagnosticWithoutChannelExplainsTheFailure(t *testing.T) {
+	h := newTestHandler(t, newTestState())
+	_, page := runDiagnostic(t, h)
+	for _, want := range []string{"La operación falló", "No hay un canal de comunicación activo con la VM «pruebas»", "<title>Falló · Probar conexión"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("result page is missing %q", want)
+		}
+	}
+}
+
+func TestFailedCommandShowsStderrAndExitCode(t *testing.T) {
+	state := newTestState()
+	_ = state.SetExecutor("pruebas", &executor.Fake{RunFunc: func(executor.Command) (executor.Result, error) {
+		return executor.Result{Stderr: "hostname: permiso denegado", ExitCode: 4}, nil
+	}})
+	_, page := runDiagnostic(t, newTestHandler(t, state))
+	for _, want := range []string{"La operación falló", "hostname: permiso denegado", "código 4"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("result page is missing %q", want)
+		}
+	}
+}
+
+func TestCommandOutputIsHTMLEscaped(t *testing.T) {
+	state := newTestState()
+	_ = state.SetExecutor("pruebas", &executor.Fake{RunFunc: func(executor.Command) (executor.Result, error) {
+		return executor.Result{Stdout: "<script>alert(1)</script>", Stderr: "<img src=x onerror=alert(2)>"}, nil
+	}})
+	_, page := runDiagnostic(t, newTestHandler(t, state))
+	if strings.Contains(page, "<script>alert(1)</script>") || strings.Contains(page, "<img src=x") {
+		t.Fatal("command output from the VM was rendered as HTML")
+	}
+	if !strings.Contains(page, "&lt;script&gt;alert(1)&lt;/script&gt;") {
+		t.Fatal("escaped output not found: it may not be rendered at all")
+	}
+}
+
+func TestUnknownOrMalformedResultIsNotFound(t *testing.T) {
+	for _, p := range []string{"/resultado/0123456789abcdef", "/resultado/xyz", "/resultado/0123456789ABCDEF", "/resultado/0123456789abcdef0", "/resultado/"} {
+		if rec := do(t, http.MethodGet, p); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", p, rec.Code)
+		}
+	}
+}
+
+func TestPanelListsRecentOperations(t *testing.T) {
+	state := newTestState()
+	h := newTestHandler(t, state)
+	empty := body(serve(t, h, httptest.NewRequest(http.MethodGet, "/", nil)))
+	if !strings.Contains(empty, "Aún no hay operaciones") {
+		t.Fatal("panel must show the empty state before any operation")
+	}
+	_ = state.SetExecutor("pruebas", executor.NewSimulated("pruebas"))
+	location, _ := runDiagnostic(t, h)
+	page := body(serve(t, h, httptest.NewRequest(http.MethodGet, "/", nil)))
+	if strings.Contains(page, "Aún no hay operaciones") {
+		t.Fatal("empty state must disappear after an operation")
+	}
+	if strings.Count(page, `href="`+location+`"`) < 1 {
+		t.Fatalf("panel must link to %s", location)
+	}
+}
+
+func TestStatusBarShowsTheLastOperation(t *testing.T) {
+	state := newTestState()
+	_ = state.SetExecutor("pruebas", executor.NewSimulated("pruebas"))
+	h := newTestHandler(t, state)
+	location, _ := runDiagnostic(t, h)
+	page := body(serve(t, h, httptest.NewRequest(http.MethodGet, "/servicios", nil)))
+	bar := regexp.MustCompile(`(?s)<footer class="statusbar".*?</footer>`).FindString(page)
+	if bar == "" {
+		t.Fatal("status bar not found")
+	}
+	for _, want := range []string{"Probar conexión", `href="` + location + `"`, "Simulado", `id="estado-ejecucion" aria-live="polite"`, `id="cronometro" aria-hidden="true"`} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("status bar is missing %q", want)
+		}
+	}
+}
+
+func TestOperationFormsAreMarkedForTheRunningIndicator(t *testing.T) {
+	page := body(do(t, http.MethodGet, "/"))
+	if !regexp.MustCompile(`<form[^>]*action="/diagnostico"[^>]*data-operacion=`).MatchString(page) {
+		t.Fatal("the diagnostic form must carry data-operacion so the interface shows it is running")
+	}
+}
+
+func TestDiagnosticRejectsCrossSiteRequests(t *testing.T) {
+	state := newTestState()
+	f := executor.NewSimulated("pruebas")
+	_ = state.SetExecutor("pruebas", f)
+	req := postForm("/diagnostico", url.Values{})
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	if rec := serve(t, newTestHandler(t, state), req); rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if n := len(f.Calls()); n != 0 {
+		t.Fatalf("a rejected request ran %d commands on the VM", n)
+	}
+}
+
+func TestResultTitleStatesTheOutcome(t *testing.T) {
+	state := newTestState()
+	_ = state.SetExecutor("pruebas", executor.NewSimulated("pruebas"))
+	_, page := runDiagnostic(t, newTestHandler(t, state))
+	if !strings.Contains(page, "<title>Éxito · Probar conexión") {
+		t.Fatal("the page title must state the outcome: it is what screen readers announce on load")
+	}
+}
+
+func TestResultIsShownEvenIfTheLogCannotBeWritten(t *testing.T) {
+	state := newTestState()
+	_ = state.SetExecutor("pruebas", executor.NewSimulated("pruebas"))
+	h, log := newTestHandlerWithLog(t, state)
+	log.Close() // disk failure after the command ran
+	_, page := runDiagnostic(t, h)
+	if !strings.Contains(page, "no se pudo guardar en el registro") {
+		t.Fatal("the result page must warn that the operation was not saved to disk")
 	}
 }

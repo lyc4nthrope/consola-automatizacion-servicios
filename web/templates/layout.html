@@ -59,6 +59,7 @@
     </aside>
 
     <div class="main">
+      <div class="running-bar" aria-hidden="true"></div>
       <header class="topbar">
         <button class="btn btn-icon d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#menu" aria-controls="menu" aria-label="Abrir menú">
           <i class="bi bi-list" aria-hidden="true"></i>
@@ -93,6 +94,23 @@
       <main id="contenido" class="content" tabindex="-1">
         {{template "content" .}}
       </main>
+
+      <footer class="statusbar" aria-label="Barra de estado">
+        <span class="sb-item">
+          <span class="dot {{if eq .Channel "Sin conexión"}}dot-off{{else}}dot-on{{end}}" aria-hidden="true"></span>
+          <span translate="no">{{.Current.Name}}</span> · {{.Channel}}
+        </span>
+        <span class="sb-item sb-running" id="estado-ejecucion" aria-live="polite"></span>
+        <span class="sb-item sb-timer mono" id="cronometro" aria-hidden="true"></span>
+        {{- with .Last}}
+        <a class="sb-item sb-last" href="/resultado/{{.ID}}">
+          Última: {{.Action}} ·
+          <span class="{{if .OK}}sb-ok{{else}}sb-fail{{end}}"><i class="bi {{if .OK}}bi-check-lg{{else}}bi-x-lg{{end}}" aria-hidden="true"></i> {{if .OK}}éxito{{else}}falló{{end}}</span>
+          · <span class="mono">{{dur .Duration}} · {{hora .Time}}</span>
+        </a>
+        {{- end}}
+        <span class="sb-item sb-version mono" translate="no">consola {{.Version}}</span>
+      </footer>
     </div>
   </div>
 
