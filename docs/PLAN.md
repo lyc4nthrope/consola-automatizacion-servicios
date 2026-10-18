@@ -72,11 +72,14 @@ type Result struct {
 }
 
 type Executor interface {
+    Name() string // canal: "Guest Additions" o "SSH"; se muestra en la interfaz y se guarda en el registro
     Run(ctx context.Context, c Command) (Result, error)
     CopyTo(ctx context.Context, localPath, remotePath string) error   // host → VM
     CopyFrom(ctx context.Context, remotePath, localPath string) error // VM → host (descargar llaves, leer haproxy.cfg)
 }
 ```
+
+**Estado de la app (lo implementa A en F1):** la app guarda, por cada destino, qué `Executor` está activo. `state.SetExecutor(destino, ex)` lo cambia (B lo llama al terminar el bootstrap SSH) y `state.Executor(destino)` lo entrega a los módulos.
 
 **Estructura del repositorio y dueño de cada carpeta:**
 
