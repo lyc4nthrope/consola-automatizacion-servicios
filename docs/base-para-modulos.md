@@ -8,7 +8,7 @@ archivos de otra parte**. Este documento es la referencia de la API; los planes 
 ```bash
 cp config.example.json config.json   # ajustar nombres de VM e IPs; config.json no se sube al repo
 go run ./cmd/consola -simular        # sin VM: cada destino responde con un canal simulado
-go run ./cmd/consola                 # con VM real (canal Guest Additions: Parte A, fase F3)
+go run ./cmd/consola                 # con VM real: ver "Conectar una VM real" más abajo
 go test -race ./...                  # siempre en verde antes de un commit
 ```
 
@@ -19,6 +19,27 @@ Abrir `http://127.0.0.1:8090`. La consola solo responde en esa dirección (o `lo
 | `-config` | Archivo de configuración (por defecto `config.json`) |
 | `-logs` | Carpeta del registro de operaciones (por defecto `logs/`, solo legible por tu usuario) |
 | `-simular` | Canal simulado para todos los destinos: desarrollar y hacer demos sin VM |
+
+## Conectar una VM real (canal Guest Additions)
+
+Cada integrante tiene su propio VirtualBox: la VM de pruebas vive en su equipo (procedimiento en el plan de la Parte C, C1).
+
+1. En la VM: contraseña de root (`passwd root`) y Guest Additions instaladas.
+2. En `config.json`, el destino con el nombre exacto de la VM en VirtualBox (`vm`) y su IP. Opcional: `guest_user` (por defecto `root`).
+3. La contraseña va en un archivo privado, nunca en la terminal como argumento ni en el chat de la IA. En **tu propia terminal**:
+   ```bash
+   install -d -m 700 keys
+   read -rs -p "Contraseña de root de la VM: " p && (umask 077 && printf '%s' "$p" > keys/guest-pass) && unset p
+   ```
+   Un destino con otra contraseña usa `keys/guest-pass-<destino>` (por ejemplo `keys/guest-pass-balanceador`).
+4. `go run ./cmd/consola`: el destino aparece con el canal **Guest Additions**; "Probar conexión" ejecuta `hostname` en la VM.
+
+La consola se niega a usar un archivo de contraseña que otros usuarios puedan leer (pide `chmod 600`). `keys/` está en `.gitignore`.
+
+Pruebas del adaptador contra la VM real (opcionales, solo cuando se piden):
+```bash
+CONSOLA_VM=consola-pruebas CONSOLA_GUEST_PASSFILE=keys/guest-pass go test -tags vm -count=1 -run TestVM ./internal/executor/
+```
 
 ## Cómo se agrega un módulo (sin tocar `server.go`)
 

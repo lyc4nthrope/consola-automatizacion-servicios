@@ -2,7 +2,7 @@
 
 **Responsable:** Wiliam Carmona
 **Rama de trabajo:** `wiliam` (se sube a `dev` al cerrar cada fase verificada)
-**Ventana:** sábado 17 – miércoles 21 de octubre de 2026 · **Entrega obligatoria al equipo:** VM de pruebas (C1) el **domingo 18**
+**Ventana:** sábado 17 – miércoles 21 de octubre de 2026 · **Entrega obligatoria al equipo:** procedimiento probado de la VM de pruebas (C1), **lo antes posible** (estaba previsto el domingo 18)
 **Planes relacionados:** [general](../PLAN.md) · [Parte A](../parte-a/PLAN.md) · [Parte B](../parte-b/PLAN.md) · [Guía de la base](../base-para-modulos.md)
 
 > La Parte C prepara el **escenario** (las máquinas virtuales donde todo se prueba), convierte aplicaciones en
@@ -145,16 +145,28 @@ docs/parte-c/                         plan, diagrama (C6) y notas
 
 ### C1 — Entorno de pruebas
 
+> **Cada integrante tiene su propio VirtualBox**, así que cada uno necesita su VM de pruebas en su equipo.
+> Wiliam ejecuta estos pasos primero, los corrige donde haga falta y deja el procedimiento final en
+> `docs/parte-c/entorno.md`; Cristhian y Daniel lo repiten en sus equipos. Para la sustentación y los
+> videos se usa un solo equipo.
+
 **Pasos en el host (VirtualBox 7.2):**
 1. Crear `consola-pruebas` sobre `base-webapp.vdi` (multiconexión), 1 GB de RAM, adaptador en puente sobre `wlo1`.
 2. Dentro de la VM: `apt update && apt upgrade -y`, `cat /etc/debian_version` (debe decir 13.7 o superior), `systemctl status ssh` activo, `passwd root` (DC2), `hostnamectl set-hostname consola-pruebas`.
-3. Guest Additions: insertar la imagen desde VirtualBox, `apt install -y build-essential linux-headers-$(uname -r)`, ejecutar el instalador, reiniciar. Comprobar **desde el host**:
-   `VBoxManage guestcontrol consola-pruebas run --exe /usr/bin/hostname --username root --password '<clave>' --wait-stdout`
-4. Balanceador: en la VM `balanceador`, dejar `haproxy.cfg` **por defecto** (`apt install --reinstall -o Dpkg::Options::="--force-confmiss" haproxy` o restaurar `/etc/haproxy/haproxy.cfg` desde el paquete), root con contraseña y Guest Additions como en el paso 3. Copiar ese `haproxy.cfg` por defecto a `internal/balanceador/testdata/haproxy-debian-default.cfg`.
-5. Anotar IP de cada VM y escribir el ejemplo para el equipo (sin contraseñas) en el chat del grupo; cada uno lo pone en su `config.json`.
-6. Snapshot `base-consola` de `consola-pruebas` y `balanceador` (DC3).
+3. Guest Additions: insertar la imagen desde VirtualBox, `apt install -y build-essential linux-headers-$(uname -r)`, ejecutar el instalador, reiniciar.
+4. En el host, guardar la contraseña de root de la VM en un archivo privado que la consola lee (nunca se escribe en la terminal como argumento ni se pega en el chat de la IA). En **tu propia terminal**:
+   ```bash
+   cd consola && install -d -m 700 keys
+   read -rs -p "Contraseña de root de la VM: " p && (umask 077 && printf '%s' "$p" > keys/guest-pass) && unset p
+   ```
+   Comprobar **desde el host**:
+   `VBoxManage guestcontrol consola-pruebas run --exe /usr/bin/hostname --username root --passwordfile keys/guest-pass --wait-stdout`
+5. Balanceador: en la VM `balanceador`, dejar `haproxy.cfg` **por defecto** (`apt install --reinstall -o Dpkg::Options::="--force-confmiss" haproxy` o restaurar `/etc/haproxy/haproxy.cfg` desde el paquete), root con contraseña y Guest Additions como en los pasos 3 y 4 (si su contraseña es distinta, va en `keys/guest-pass-balanceador`). Copiar ese `haproxy.cfg` por defecto a `internal/balanceador/testdata/haproxy-debian-default.cfg`.
+6. Anotar el nombre y la IP de cada VM en `config.json` (sin contraseñas).
+7. Snapshot `base-consola` de `consola-pruebas` y `balanceador` (DC3).
+8. Escribir `docs/parte-c/entorno.md` con los pasos tal como funcionaron, para que el equipo los repita.
 
-**Terminada cuando:** el comando del paso 3 devuelve `consola-pruebas` desde el host, el equipo tiene las IPs, y existen los dos snapshots.
+**Terminada cuando:** el comando del paso 4 devuelve `consola-pruebas` desde el host, al arrancar la consola el destino muestra el canal **Guest Additions** y "Probar conexión" responde, existen los dos snapshots, y `docs/parte-c/entorno.md` está en `dev`.
 
 ### C2 — Desplegar una aplicación como servicio (§3.3)
 
