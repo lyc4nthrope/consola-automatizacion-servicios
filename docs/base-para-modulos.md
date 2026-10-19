@@ -144,6 +144,7 @@ func (s *server) instalar(w http.ResponseWriter, r *http.Request) {
 | `{{aria .Form "campo"}}` | Pone `aria-invalid` y `aria-describedby` solo cuando el campo tiene error |
 | `{{aria .Form "campo" "campo-ayuda"}}` | Igual, y además enlaza siempre los textos de ayuda con esos `id` (el lector de pantalla los lee al entrar al campo) |
 | `data-operacion="…"` en un `<button formaction="/modulo/otra">` | Un mismo formulario con dos acciones (por ejemplo Instalar y Eliminar): el botón usa su propio texto de "Ejecutando…" |
+| `data-local` en un botón | El botón no ejecuta nada en la VM (por ejemplo "Vista previa"): no muestra "Ejecutando…" ni bloquea el formulario |
 | `{{template "error-campo" (campo .Form "campo")}}` | El mensaje de error debajo del campo, enlazado a él |
 | `{{template "resumen-errores" .Form}}` | Resumen anunciado (`role="alert"`) con enlaces a cada campo |
 | `FieldErrors(err1, err2, …)` | Convierte errores de `validate` en `Form.Errors`; un error sin campo va en `Errors[""]` |
