@@ -180,7 +180,7 @@ func (g *GuestControl) run(ctx context.Context, args []string) (string, string, 
 func (g *GuestControl) checkPasswordFile() error {
 	st, err := os.Stat(g.PasswordFile)
 	if err != nil || !st.Mode().IsRegular() {
-		return &ChannelError{Msg: fmt.Sprintf("No se encontró el archivo con la contraseña de Guest Additions (%s); créalo con permisos 600", g.PasswordFile), Err: err}
+		return &ChannelError{Msg: fmt.Sprintf("No se encontró el archivo con la contraseña de Guest Additions (%s); créalo con permisos 600 como indica el README (sección Configurar)", g.PasswordFile), Err: err}
 	}
 	if st.Mode().Perm()&0o077 != 0 {
 		return &ChannelError{Msg: fmt.Sprintf("El archivo de contraseña %s lo pueden leer otros usuarios; corrígelo con: chmod 600 %s", g.PasswordFile, g.PasswordFile)}
@@ -202,7 +202,7 @@ func (g *GuestControl) explain(stderr string) error {
 	var msg string
 	switch {
 	case strings.Contains(low, "not found") || strings.Contains(low, "no such file or directory") || strings.Contains(low, "verr_file_not_found") || strings.Contains(low, "verr_path_not_found"):
-		msg = fmt.Sprintf("El archivo o la carpeta no existe en la VM «%s»", g.VM)
+		msg = fmt.Sprintf("El archivo o la carpeta no existe en la VM «%s»; revisa la ruta", g.VM)
 	case strings.Contains(low, "could not find a registered machine"):
 		msg = fmt.Sprintf("La VM «%s» no existe en VirtualBox; revisa el campo vm de config.json", g.VM)
 	case strings.Contains(low, "not currently running") || strings.Contains(low, "is not running"):
