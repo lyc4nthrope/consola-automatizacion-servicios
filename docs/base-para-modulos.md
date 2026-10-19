@@ -118,7 +118,8 @@ func (s *server) instalar(w http.ResponseWriter, r *http.Request) {
 | `Commands` | Se ejecutan en orden; el primero que falla detiene la operación. Vacío = error de programación |
 | `Timeout` | Límite de toda la operación (30 s si se deja en cero). Cerrar la pestaña **no** corta la operación |
 | `AlsoOK` | Otros códigos de salida que significan éxito, por ejemplo `[]int{3}` para `systemctl status` de un servicio detenido |
-| `Success` | Mensaje para el usuario cuando todo salió bien |
+| `Then` | Opcional. Cuando todos los `Commands` terminan bien, recibe sus resultados y devuelve los comandos siguientes, que corren en la misma operación y el mismo registro. Sirve para **leer → cambiar en Go → escribir**: `cat /etc/hosts` → función pura → escribir el archivo. Si devuelve un error, la operación se detiene y el texto del error es el mensaje para el usuario; si devuelve cero comandos, la operación termina bien. Ejemplo completo: `planHostname` en `internal/web/hosts.go` |
+| `Success` | Mensaje para el usuario cuando todo salió bien (recibe los resultados de `Commands` y luego los de `Then`) |
 | `Explain` | Convierte un fallo conocido en un consejo; `""` deja el mensaje por defecto |
 
 `executor.Command` tiene `Name`, `Args` y `Stdin` (para datos secretos como contraseñas: nunca en `Args`).
