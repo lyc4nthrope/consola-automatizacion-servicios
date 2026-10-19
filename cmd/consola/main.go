@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -92,14 +93,33 @@ func newState(cfg app.Config, simulate bool) *app.State {
 	return newStateWithKeys(cfg, simulate, keysDir)
 }
 
+// sshChannel, when set, returns the SSH channel of a target that is already prepared for
+// SSH, and a short fixed description for the startup log (for example the key file it
+// uses; never ssh's own error output). Part B sets it from its own file,
+// cmd/consola/canal_ssh.go:
+//
+//	func init() { sshChannel = func(t app.Target, keys string) (executor.Executor, string, bool) { ... } }
+//
+// It is tried before Guest Additions, so after a restart a VM that already works over SSH
+// keeps using SSH (the assignment: after the first contact, only SSH). It runs once per
+// target at startup, for every target at the same time, so it should finish within a few
+// seconds.
+var sshChannel func(t app.Target, keys string) (ex executor.Executor, detail string, ok bool)
+
 // newStateWithKeys builds the runtime state. With simulate, every target gets a simulated
 // channel so the interface can be developed and demonstrated without a VM. Otherwise each
-// target that has a Guest Additions password file starts with that channel.
+// target uses SSH where sshChannel says it is ready, and else Guest Additions where it has
+// a password file.
 func newStateWithKeys(cfg app.Config, simulate bool, keys string) *app.State {
 	state := app.NewState(cfg)
-	for _, t := range cfg.Targets {
+	ssh := sshChannels(cfg, simulate, keys)
+	for i, t := range cfg.Targets {
 		if simulate {
 			_ = state.SetExecutor(t.Name, executor.NewSimulated(t.Name))
+			continue
+		}
+		if ssh[i].ok && ssh[i].ex != nil && state.SetExecutor(t.Name, ssh[i].ex) == nil {
+			log.Printf("destino %s: canal SSH (%s)", t.Name, ssh[i].detail)
 			continue
 		}
 		if ex, file, ok := guestChannel(t, keys); ok {
@@ -108,6 +128,33 @@ func newStateWithKeys(cfg app.Config, simulate bool, keys string) *app.State {
 		}
 	}
 	return state
+}
+
+// sshResult is what sshChannel answered for one target.
+type sshResult struct {
+	ex     executor.Executor
+	detail string
+	ok     bool
+}
+
+// sshChannels asks sshChannel about every target at the same time, so VMs that are off
+// delay the start by one probe, not one per VM. The results keep the order of the targets.
+func sshChannels(cfg app.Config, simulate bool, keys string) []sshResult {
+	out := make([]sshResult, len(cfg.Targets))
+	if simulate || sshChannel == nil {
+		return out
+	}
+	var wg sync.WaitGroup
+	for i, t := range cfg.Targets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ex, detail, ok := sshChannel(t, keys)
+			out[i] = sshResult{ex, detail, ok}
+		}()
+	}
+	wg.Wait()
+	return out
 }
 
 // guestChannel returns the Guest Additions channel of a target if its password file exists:
