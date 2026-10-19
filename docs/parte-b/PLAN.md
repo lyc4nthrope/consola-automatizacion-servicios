@@ -69,11 +69,12 @@ Reglas obligatorias:
 | Comillas seguras para SSH | `executor.Quote(s)` y `Command.String()`; `Command.Check()` rechaza NUL y nombres con `=` | `internal/executor/executor.go` |
 | Simular la VM en tests | `executor.Fake` (`RunFunc`, `Calls()`, `Copies()`) y `executor.NewSimulated` | `internal/executor/fake.go` |
 | Canal activo por destino | `state.SetExecutor(destino, ex)`, `state.Executor(destino)`, `state.Current()` | `internal/app/state.go` |
-| Ejecutar y registrar una operación | `operacion.Plan{Action, Target, Commands, Timeout, AlsoOK, Success, Explain}` + `Runner.Run` | `internal/operacion/operacion.go` |
+| Ejecutar y registrar una operación | `operacion.Plan{Action, Target, Commands, Then, Timeout, AlsoOK, Success, Explain}` + `Runner.Run` (`Then`: leer → cambiar en Go → escribir en una sola operación) | `internal/operacion/operacion.go` |
 | Validar entradas | `validate.Usuario`, `validate.Hostname`, `validate.IPv4`, … (`*validate.Error{Field, Msg}`) | `internal/validate/validate.go` |
 | Pantallas, errores junto al campo | `registerModule`, `ModuleRouter`, `s.renderModule`, `s.runAndShow`, `FieldErrors`, parciales `error-campo` y `resumen-errores`, función `aria` | `internal/web/registro.go`, `web/templates/_formulario.html` |
 | Seguridad HTTP | Host permitido, mismo origen, CSP, límite de cuerpo: ya envuelven todas las rutas | `internal/web/server.go` |
 | Canal Guest Additions (para el bootstrap) | Fase F3 de la Parte A, lunes 19 | `internal/executor/guestcontrol.go` |
+| Arrancar por SSH las VMs que ya lo tienen | Punto de conexión `sshChannel` (Parte A, 19 de octubre): la consola lo prueba **antes** que Guest Additions al arrancar. Tú lo llenas desde tu archivo (paso 6 de B2) | `cmd/consola/main.go` (no lo edites) |
 | VM de pruebas con SSH, Guest Additions y root con contraseña | Fase C1 de la Parte C, domingo 18 | ver Parte C |
 
 ---
@@ -110,6 +111,8 @@ Solo estos. Todo lo demás es de otra parte (si necesitas un cambio allí, píde
 ```
 internal/executor/ssh.go              B1  adaptador SSH (implementa executor.Executor)
 internal/executor/ssh_test.go         B1
+cmd/consola/canal_ssh.go              B2  llena sshChannel: al arrancar, la VM que ya tiene SSH usa SSH
+cmd/consola/canal_ssh_test.go         B2
 internal/llaves/                      B2–B4  lógica pura: authorized_keys, drop-ins de sshd, planes
 internal/llaves/*_test.go
 internal/usuarios/                    B4–B5  lógica pura: parseo de getent, planes de crear/eliminar
@@ -198,10 +201,39 @@ func (s *SSH) CopyFrom(ctx context.Context, remote, local string) error
 3. `install -d -m 700 -o root -g root /root/.ssh`.
 4. Un solo `Plan` con `Then` (ver `docs/base-para-modulos.md`): `Commands` lee el archivo actual con un script fijo que no falla si no existe (`cat /root/.ssh/authorized_keys 2>/dev/null; exit 0`; por Guest Additions, `CopyFrom` de un archivo que no existe devuelve error) → `Then` llama `MergeAuthorizedKeys(actual, nueva) string` (función pura, sin duplicar) y devuelve el comando que lo escribe con `install -d -m 700 /root/.ssh` y el script de escritura de la Parte A (`writeFileScript` en `internal/web/issue.go`: contenido en `"$1"`, ruta en `"$2"`, reemplazo atómico; en `"$3"` va el SHA-256 de lo que se leyó, y si el archivo cambió entre la lectura y la escritura sale con código 12 sin tocarlo; ver `planHostname` en `internal/web/hosts.go` como ejemplo completo), seguido de `chmod 600` → todo queda en una sola operación y un solo registro.
 5. Probar con el adaptador SSH: `hostname`. Solo si responde: `state.SetExecutor(destino, ssh)`.
+6. **Al arrancar la consola, la VM que ya tiene SSH vuelve a SSH** (ver el hallazgo de abajo). Crea `cmd/consola/canal_ssh.go` con:
 
-**Tests:** `MergeAuthorizedKeys` con archivo vacío, con la llave ya presente (no la duplica), con comentarios y líneas en blanco; el plan exacto de comandos con `Fake`; si la prueba SSH falla, el canal **no** cambia.
+   ```go
+   package main
 
-**Terminada cuando:** con la VM recién restaurada del snapshot, el botón termina en "Operación exitosa", la barra superior muestra **SSH**, y "Probar conexión" funciona por SSH.
+   func init() {
+       sshChannel = func(t app.Target, keys string) (executor.Executor, string, bool) {
+           key := filepath.Join(keys, "consola_ed25519")        // usa siempre la carpeta que recibes
+           known := filepath.Join(keys, "known_hosts")          // (en las pruebas es una temporal)
+           // 1. Si no existe key (DB4): return nil, "", false, sin intentar conectarte.
+           // 2. Crea el adaptador SSH de B1 para t.IP y t.SSHUser con key y known.
+           // 3. Pruébalo con el comando `true` (no imprime nada: solo importa si responde)
+           //    y un tiempo límite de 3 s (context.WithTimeout; corta antes que el
+           //    ConnectTimeout=10 de DB2). Si falla (VM apagada, SSH aún no configurado,
+           //    huella cambiada tras restaurar el snapshot): escribe en la terminal un motivo
+           //    fijo, por ejemplo log.Printf("destino %s: SSH no responde, se usa Guest Additions", t.Name),
+           //    nunca la salida de error de ssh, y return nil, "", false: la consola sigue
+           //    con Guest Additions como hoy.
+           // 4. Si responde: return ssh, "llave keys/consola_ed25519", true. El texto es fijo:
+           //    sin salida de ssh ni rutas fuera de keys/.
+       }
+   }
+   ```
+
+   Para que esto funcione, el adaptador de B1 debe poder crearse desde otro paquete: si su campo `run` (el que reemplazan las pruebas) queda vacío, usa el `ssh` real.
+
+   No edites `main.go`: ya llama a `sshChannel` para cada destino, antes de Guest Additions, **todos a la vez** (con VMs apagadas, el arranque espera una sola prueba de 3 s, no una por VM), y escribe en la terminal `destino pruebas: canal SSH (llave keys/consola_ed25519)`. Si devuelves `true` sin adaptador, la consola lo ignora y sigue con Guest Additions.
+
+**Tests:** `MergeAuthorizedKeys` con archivo vacío, con la llave ya presente (no la duplica), con comentarios y líneas en blanco; el plan exacto de comandos con `Fake`; si la prueba SSH falla, el canal **no** cambia. En `canal_ssh_test.go`, con una carpeta temporal como `keys`: sin la llave, `sshChannel` devuelve `false` sin intentar conectarse; con la llave y la IP `192.0.2.1` (reservada para documentación: nunca responde), devuelve `false` en menos de 4 s. Esa prueba necesita el programa `ssh`; si no está (`exec.LookPath`), sáltala con `t.Skip`.
+
+**Terminada cuando:** con la VM recién restaurada del snapshot, el botón termina en "Operación exitosa", la barra superior muestra **SSH**, y "Probar conexión" funciona por SSH. **Además:** detienes la consola, la vuelves a abrir, y la barra superior sigue diciendo **SSH** (no Guest Additions).
+
+> **Hallazgo de integración (19 de octubre, Parte A).** Al revisar qué necesitaba cada parte de la otra apareció un hueco que no estaba en ningún plan: al arrancar, `cmd/consola/main.go` solo conectaba cada VM por Guest Additions. El canal SSH que deja el bootstrap vive en memoria, así que al reiniciar la consola la VM volvía a Guest Additions, y el enunciado pide que, después del primer contacto, todo vaya por SSH. **Corrección:** la Parte A agregó en `main.go` la variable `sshChannel`, que se prueba antes que Guest Additions para cada destino (con prueba automática: SSH gana donde está listo, Guest Additions queda para las demás, y `-simular` gana sobre ambos). La Parte B solo la llena desde su propio archivo (paso 6); nadie edita archivos del otro.
 
 ### B3 — Llaves de root y descarga (§3.1.2)
 
