@@ -75,6 +75,8 @@ La consola **no arranca** (y el error nombra el módulo) si un módulo registrad
 
 Las páginas y los parciales (`web/templates/_*.html`) se descubren solos.
 
+Para que la paleta **Ctrl + K** abra una acción directamente en su formulario, agrega en `internal/web/modules.go` el campo `Anchors` de tu módulo: cada acción apunta al `id` del campo (o del título) al que salta, por ejemplo `"Crear usuario": "usuario"`. Al llegar por ese enlace, el cursor queda en el campo. Una prueba revisa que cada `id` exista en la página del módulo.
+
 ## Cómo se ejecuta una operación en la VM
 
 Un módulo **no** ejecuta comandos directamente: construye un `operacion.Plan` y llama a `s.runAndShow`, que
