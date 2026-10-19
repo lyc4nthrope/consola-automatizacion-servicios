@@ -107,6 +107,8 @@ consola/
 
 **Coordinación con la Parte B:** las llaves de root se muestran en la página de Preparación (diseño de referencia), pero su lógica es de la Parte B: Daniel entrega `web/templates/_llaves-root.html` y la Parte A solo lo incluye.
 
+**Hallazgo de integración (19 de octubre).** Al revisar qué necesita cada parte de la otra apareció un hueco que no estaba en ningún plan: al arrancar, `main.go` solo conectaba cada VM por Guest Additions, así que tras reiniciar la consola una VM ya pasada a SSH volvía a Guest Additions (el enunciado pide solo SSH después del primer contacto). **Corrección:** `main.go` tiene ahora la variable `sshChannel`, que se prueba antes que Guest Additions para cada destino; está probada (SSH gana donde está listo, Guest Additions queda para las demás, `-simular` gana sobre ambos) y la consola sigue arrancando igual mientras nadie la llene. Daniel la llena desde `cmd/consola/canal_ssh.go` (paso 6 de B2 en su plan), sin editar `main.go`. Se verifica el jueves en la integración: reiniciar la consola y que la barra siga en **SSH**.
+
 **Coordinación con la Parte C:** el mapa vivo (F6b) muestra el escenario dentro de la app, pero el documento sigue necesitando el diagrama estático de C6 (Wiliam). Conviene que ambos usen los mismos nombres, IPs y canales.
 
 ---

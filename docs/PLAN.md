@@ -99,7 +99,8 @@ type Executor interface {
 
 ```
 consola/
-├── cmd/consola/main.go          A
+├── cmd/consola/main.go          A  (elige el canal de cada destino al arrancar: SSH primero, luego Guest Additions)
+├── cmd/consola/canal_ssh.go     B  (llena sshChannel; ver B2, paso 6)
 ├── config.json                  A  (D11)
 ├── internal/
 │   ├── executor/

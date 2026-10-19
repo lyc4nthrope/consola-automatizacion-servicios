@@ -176,6 +176,7 @@ exista `web/templates/_llaves-root.html` con `{{define "llaves-root"}}` para que
 | `internal/operacion` | `Runner.Run(ctx, Plan)` (los handlers usan `s.runAndShow`), `ErrUnknownTarget` |
 | `internal/executor` | `Command` (+ `Check`, `String`), `Result`, la interfaz `Executor`, `Quote`, `Fake` (`RunFunc`, `Calls()`, `Copies()`), `NewSimulated` |
 | `internal/app` | `State`: destinos, `Current()`, `SetExecutor(destino, ex)` (la Parte B lo usa al terminar el bootstrap SSH) |
+| `cmd/consola` | `sshChannel`: al arrancar, se prueba antes que Guest Additions para cada destino; la Parte B lo llena desde `cmd/consola/canal_ssh.go` |
 | `internal/web` | `registerModule`, `ModuleRouter.HandleFunc`, `s.renderModule`, `s.runAndShow`, `Form`, `FieldErrors`; para una página propia distinta a la del módulo: `s.newView(r, título, slug)` + `s.render(w, estado, "pagina.html", v)` |
 
 ## Reglas que ya cumple la base (no hay que repetirlas)
