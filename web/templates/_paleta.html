@@ -1,0 +1,44 @@
+{{/*
+  Ctrl+K palette (Part A, F7): jump to a page, to a module action or change the target.
+  It never runs anything on a VM. web/static/js/consola.js opens it, filters it and moves
+  through it; without JavaScript it is never shown.
+*/}}
+{{define "paleta"}}
+<dialog class="paleta" id="paleta" aria-labelledby="paleta-titulo">
+  <h2 class="visually-hidden" id="paleta-titulo">Ir a una página, una acción o un destino</h2>
+  <div class="paleta-buscar">
+    <i class="bi bi-search" aria-hidden="true"></i>
+    <input class="paleta-texto" id="paleta-texto" type="text" role="combobox" aria-expanded="true" aria-controls="paleta-lista"
+      aria-autocomplete="list" aria-label="Buscar" placeholder="Busca una página, una acción o un destino" autocomplete="off" spellcheck="false">
+  </div>
+  <ul class="paleta-lista" id="paleta-lista" role="listbox" aria-label="Resultados">
+    <li class="paleta-op" role="option" id="paleta-panel" aria-selected="false" aria-describedby="paleta-panel-tipo">
+      <a href="/" tabindex="-1"><i class="bi bi-grid-1x2" aria-hidden="true"></i> Panel</a><span class="paleta-tipo" id="paleta-panel-tipo" aria-hidden="true">Página</span>
+    </li>
+    {{- range .Modules}}
+    {{- $m := .}}
+    <li class="paleta-op" role="option" id="paleta-{{.Slug}}" aria-selected="false" aria-describedby="paleta-{{.Slug}}-tipo">
+      <a href="{{.Path}}" tabindex="-1"><i class="bi {{.Icon}}" aria-hidden="true"></i> {{.Title}}</a><span class="paleta-tipo" id="paleta-{{.Slug}}-tipo" aria-hidden="true">Página</span>
+    </li>
+    {{- range $i, $a := .Actions}}
+    <li class="paleta-op" role="option" id="paleta-{{$m.Slug}}-{{$i}}" aria-selected="false" aria-describedby="paleta-{{$m.Slug}}-{{$i}}-tipo" data-claves="{{index $m.Anchors $a}}">
+      <a href="{{$m.Path}}{{with index $m.Anchors $a}}#{{.}}{{end}}" tabindex="-1"><i class="bi bi-arrow-return-right" aria-hidden="true"></i> {{$a}}</a><span class="paleta-tipo" id="paleta-{{$m.Slug}}-{{$i}}-tipo" aria-hidden="true">{{$m.Title}}</span>
+    </li>
+    {{- end}}
+    {{- end}}
+    {{- range $i, $t := .Targets}}
+    <li class="paleta-op" role="option" id="paleta-destino-{{$i}}" aria-selected="false" aria-describedby="paleta-destino-{{$i}}-tipo" data-claves="vm {{$t.VM}}"{{if eq $t.Name $.Current.Name}} data-actual{{end}}>
+      <button type="submit" form="paleta-destino" name="destino" value="{{$t.Name}}" tabindex="-1"><i class="bi bi-hdd-network" aria-hidden="true"></i> Usar destino <span translate="no">{{$t.Name}}</span> <span class="mono paleta-detalle" translate="no">{{$t.IP}}</span></button>
+      <span class="paleta-tipo" id="paleta-destino-{{$i}}-tipo" aria-hidden="true">{{if eq $t.Name $.Current.Name}}Destino actual{{else}}Destino{{end}}</span>
+    </li>
+    {{- end}}
+    <li class="paleta-op" role="option" id="paleta-tema" aria-selected="false" aria-describedby="paleta-tema-tipo">
+      <button type="button" data-paleta="tema" tabindex="-1"><i class="bi bi-circle-half" aria-hidden="true"></i> Cambiar entre tema claro y oscuro</button><span class="paleta-tipo" id="paleta-tema-tipo" aria-hidden="true">Apariencia</span>
+    </li>
+  </ul>
+  <p class="paleta-vacio" id="paleta-vacio" hidden>Nada coincide. Prueba con otra palabra, por ejemplo «usuarios» o «pruebas».</p>
+  <p class="visually-hidden" id="paleta-estado" aria-live="polite"></p>
+  <p class="paleta-ayuda" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> moverse · <kbd>Enter</kbd> abrir · <kbd>Esc</kbd> cerrar</p>
+  <form id="paleta-destino" method="post" action="/destino"><input type="hidden" name="volver" value="{{.Path}}"></form>
+</dialog>
+{{end}}

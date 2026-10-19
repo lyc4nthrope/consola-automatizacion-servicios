@@ -8,6 +8,11 @@ type Module struct {
 	Icon    string // Bootstrap Icons class
 	Summary string
 	Actions []string
+	// Anchors, optional, maps an action to the id of the element its page jumps to (a form
+	// field gets the focus; a heading only scrolls into view), so the Ctrl+K palette opens
+	// the action itself.
+	// A test checks that every id exists on the module page.
+	Anchors map[string]string
 }
 
 // Path returns the URL of the module page.
@@ -20,6 +25,12 @@ var modules = []Module{
 		Icon:    "bi-gear",
 		Summary: "Paquetes, llaves de root, mensaje de entrada y nombre de host de la VM.",
 		Actions: []string{"Instalar y eliminar aplicaciones", "Llaves SSH de root", "Mensaje de entrada (/etc/issue)", "Nombre de host y /etc/hosts"},
+		Anchors: map[string]string{
+			"Instalar y eliminar aplicaciones": "paquete",
+			"Llaves SSH de root":               "llaves-titulo",
+			"Mensaje de entrada (/etc/issue)":  "mensaje",
+			"Nombre de host y /etc/hosts":      "hostname",
+		},
 	},
 	{
 		Slug:    "usuarios",

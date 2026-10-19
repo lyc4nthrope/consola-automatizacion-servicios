@@ -123,3 +123,175 @@
   var first = document.querySelector('[aria-invalid="true"]');
   if (first) first.focus();
 })();
+
+// Ctrl+K palette (templates/_paleta.html): a filterable list of pages, module actions and
+// targets. Choosing an item follows its link or presses its button; nothing runs on a VM.
+(function () {
+  var dialog = document.getElementById("paleta");
+  var opener = document.getElementById("abrir-paleta");
+  if (!dialog || typeof dialog.showModal !== "function") return;
+  var input = document.getElementById("paleta-texto");
+  var options = Array.prototype.slice.call(dialog.querySelectorAll('[role="option"]'));
+  var empty = document.getElementById("paleta-vacio");
+  var status = document.getElementById("paleta-estado");
+  var active = null;
+  var announce = null; // the result count is read once the user stops typing
+  var lastPointer = ""; // Chrome sends mousemove after scrolling, without the pointer moving
+  var mac = /Mac|iPhone|iPad/.test(navigator.platform);
+
+  // Accent- and case-insensitive: "preparacion" finds "Preparación". Each typed word must
+  // start a word of the option (its text plus data-claves), so "tema" does not find "sistema".
+  function plain(s) {
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  }
+  options.forEach(function (o) {
+    o.palabras = plain(o.textContent + " " + (o.dataset.claves || "")).split(/[^a-z0-9]+/).filter(Boolean);
+  });
+  function matches(o, w) {
+    return o.palabras.some(function (p) { return p.indexOf(w) === 0; });
+  }
+
+  function visible() {
+    return options.filter(function (o) { return !o.hidden; });
+  }
+
+  function select(o) {
+    if (active) active.setAttribute("aria-selected", "false");
+    active = o;
+    if (o) {
+      o.setAttribute("aria-selected", "true");
+      input.setAttribute("aria-activedescendant", o.id);
+      o.scrollIntoView({ block: "nearest" });
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  }
+
+  function filter(quiet) {
+    var words = plain(input.value).split(/[^a-z0-9]+/).filter(Boolean);
+    options.forEach(function (o) {
+      o.hidden = !words.every(function (w) { return matches(o, w); });
+    });
+    var shown = visible();
+    empty.hidden = shown.length > 0;
+    clearTimeout(announce);
+    status.textContent = "";
+    if (!quiet) {
+      announce = setTimeout(function () {
+        status.textContent = shown.length === 1 ? "1 resultado" : shown.length + " resultados";
+      }, 300);
+    }
+    select(shown[0] || null);
+  }
+
+  function open() {
+    if (dialog.open) return;
+    // The mobile menu (an offcanvas) would keep the focus inside itself: close it first.
+    var menu = document.querySelector(".offcanvas.show, .offcanvas-lg.show");
+    if (menu && window.bootstrap) {
+      var oc = window.bootstrap.Offcanvas.getInstance(menu);
+      if (oc) oc.hide();
+    }
+    input.value = "";
+    filter(true);
+    dialog.showModal();
+    input.focus();
+  }
+
+  // Opens an option without simulating a click inside it.
+  function activate(o) {
+    if (!o) return;
+    var target = o.querySelector("a, button");
+    dialog.close();
+    if (target.tagName === "A") {
+      window.location.assign(target.href);
+    } else if (target.dataset.paleta === "tema") {
+      var tema = document.getElementById("cambiar-tema");
+      if (tema) tema.click();
+    } else if (o.hasAttribute("data-actual")) {
+      // Already the target: nothing to change.
+    } else if (target.form) {
+      // A target: POST /destino with its name (form.submit where requestSubmit is missing).
+      if (target.form.requestSubmit) {
+        target.form.requestSubmit(target);
+      } else {
+        var field = document.createElement("input");
+        field.type = "hidden";
+        field.name = target.name;
+        field.value = target.value;
+        target.form.appendChild(field);
+        target.form.submit();
+      }
+    }
+  }
+
+  document.addEventListener("keydown", function (e) {
+    // Cmd+K on a Mac (Ctrl+K there deletes to the end of the line); Ctrl+K elsewhere. The
+    // key code also covers keyboard layouts where K is another letter.
+    var mod = mac ? e.metaKey : e.ctrlKey;
+    if (mod && !e.altKey && !e.shiftKey && (e.code === "KeyK" || e.key.toLowerCase() === "k")) {
+      e.preventDefault();
+      if (dialog.open) dialog.close();
+      else open();
+    }
+  });
+
+  input.addEventListener("input", function () { filter(false); });
+  input.addEventListener("keydown", function (e) {
+    if (e.isComposing || e.keyCode === 229) return; // Enter that ends an IME composition
+    var shown = visible();
+    var i = shown.indexOf(active);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!shown.length) return;
+      var step = e.key === "ArrowDown" ? 1 : -1;
+      select(shown[(i + step + shown.length) % shown.length]);
+    } else if (e.key === "Home" || e.key === "End") {
+      if (!shown.length || input.value) return; // with text, Home/End move the cursor
+      e.preventDefault();
+      select(e.key === "Home" ? shown[0] : shown[shown.length - 1]);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      activate(active);
+    }
+  });
+
+  options.forEach(function (o) {
+    o.addEventListener("click", function (e) {
+      e.preventDefault(); // the link or button inside does not act by itself; activate does
+      activate(o);
+    });
+    o.addEventListener("mousemove", function (e) {
+      var at = e.clientX + "," + e.clientY;
+      if (at === lastPointer) return;
+      lastPointer = at;
+      if (active !== o) select(o);
+    });
+  });
+
+  // A click on the dark backdrop (outside the box) closes it.
+  dialog.addEventListener("click", function (e) {
+    if (e.target === dialog) dialog.close();
+  });
+
+  if (opener) {
+    opener.hidden = false;
+    opener.addEventListener("click", open);
+  }
+})();
+
+// Arriving at a form field through a link (#paquete, from the palette): put the cursor in it.
+(function () {
+  function focusTarget() {
+    var id;
+    try {
+      id = decodeURIComponent(location.hash.slice(1));
+    } catch (e) {
+      return; // a malformed address: nothing to focus
+    }
+    var el = id && document.getElementById(id);
+    if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) el.focus();
+  }
+  window.addEventListener("hashchange", focusTarget);
+  focusTarget();
+})();
