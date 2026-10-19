@@ -675,7 +675,12 @@ h2 {
 
   .target-form .form-select {
     flex: 1;
+    min-width: 0; /* a long target name is cut in the box instead of widening the page */
     max-width: none;
+  }
+
+  .target-form .btn {
+    flex-shrink: 0;
   }
 }
 
@@ -1241,4 +1246,211 @@ h2 {
 
 .issue-restore .field-hint {
   margin: 0;
+}
+
+/* ---------- Infrastructure map (panel) ----------
+   A tree: this machine → VirtualBox → each VM. The line to a VM says how the console
+   reaches it (dashed = Guest Additions, solid = SSH, dotted = simulated, none = no
+   channel); the line to the current target is in the accent color and pulses only while
+   an operation runs. */
+.mapa-intro {
+  margin: -0.35rem 0 1rem;
+  color: var(--c-muted);
+  font-size: 0.9rem;
+}
+
+.mapa-arbol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mapa-arbol .mapa-arbol {
+  margin-top: 0.5rem;
+  padding-left: 1.4rem;
+}
+
+/* The shared vertical line uses --c-border on purpose: it is structure (the nested lists
+   already say what belongs to what), so it stays quiet. The meaning is in the 2px channel
+   line (--c-muted, over 3:1 on both themes) and in the channel text on each VM. */
+.mapa-rama {
+  --mapa-y: 1rem; /* height of the line, at the middle of the node's first line */
+  position: relative;
+}
+
+.mapa-arbol .mapa-arbol > .mapa-rama {
+  padding-left: 2rem;
+}
+
+.mapa-arbol .mapa-arbol > .mapa-rama + .mapa-rama {
+  margin-top: 0.5rem;
+}
+
+/* The shared line coming down from the parent, and the branch to this node. */
+.mapa-arbol .mapa-arbol > .mapa-rama::before,
+.mapa-arbol .mapa-arbol > .mapa-rama::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.mapa-arbol .mapa-arbol > .mapa-rama::before {
+  top: -0.5rem;
+  bottom: 0;
+  border-left: 1px solid var(--c-border);
+}
+
+.mapa-arbol .mapa-arbol > .mapa-rama:last-child::before {
+  bottom: auto;
+  height: calc(var(--mapa-y) + 0.5rem);
+}
+
+.mapa-arbol .mapa-arbol > .mapa-rama::after {
+  top: var(--mapa-y);
+  width: 1.75rem;
+  border-top: 2px solid var(--c-muted);
+}
+
+.mapa-vm {
+  --mapa-pad: 0.55rem; /* the button's vertical padding */
+  --mapa-y: calc(var(--mapa-pad) + 1px + 0.75rem); /* middle of its first text line */
+}
+
+.mapa .mapa-vms > .mapa-vm.canal-ga::after,
+.mapa-muestra.canal-ga {
+  border-top-style: dashed;
+}
+
+.mapa .mapa-vms > .mapa-vm.canal-sim::after,
+.mapa-muestra.canal-sim {
+  border-top-style: dotted;
+}
+
+.mapa .mapa-vms > .mapa-vm.canal-otro::after {
+  border-top-style: double;
+  border-top-width: 3px;
+}
+
+.mapa .mapa-vms > .mapa-vm.canal-none::after {
+  border-top-color: transparent;
+}
+
+.mapa .mapa-vms > .mapa-vm.is-current::after {
+  border-top-color: var(--c-accent);
+}
+
+.mapa .mapa-vms > .mapa-vm.is-current.canal-none::after {
+  border-top-color: transparent;
+}
+
+body.is-running .mapa .mapa-vms > .mapa-vm.is-current::after {
+  animation: mapa-pulso 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes mapa-pulso {
+  to {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-running .mapa .mapa-vms > .mapa-vm.is-current::after {
+    animation: none;
+  }
+}
+
+.mapa-nodo {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  background: var(--c-surface-2);
+  font-weight: 600;
+}
+
+.mapa-detalle {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--c-muted);
+}
+
+.mapa-boton {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 1rem;
+  width: 100%;
+  max-width: 40rem;
+  padding: var(--mapa-pad) 0.9rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  background: var(--c-surface);
+  color: var(--c-text);
+  text-align: left;
+}
+
+.mapa-vm-nombre,
+.mapa-vm-datos {
+  min-width: 0;
+  overflow-wrap: anywhere; /* a 63-character name never pushes the page sideways */
+}
+
+.mapa-boton:hover {
+  border-color: var(--c-accent);
+}
+
+.mapa-boton:focus-visible {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+.mapa-boton[aria-current="true"] {
+  border-color: var(--c-accent);
+  box-shadow: inset 0 0 0 1px var(--c-accent);
+}
+
+.mapa-vm-nombre {
+  font-weight: 600;
+}
+
+.mapa-vm-datos {
+  font-size: 0.85rem;
+  color: var(--c-muted);
+}
+
+.mapa-vm-canal {
+  font-size: 0.85rem;
+}
+
+/* Being the target is not a health state, so it does not use the "ok" green. */
+.mapa-actual {
+  margin-left: auto;
+  background: var(--c-accent-soft);
+  color: var(--c-accent-strong);
+}
+
+.mapa-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--c-muted);
+}
+
+.mapa-leyenda li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.mapa-muestra {
+  display: inline-block;
+  width: 1.75rem;
+  border-top: 2px solid var(--c-muted);
 }

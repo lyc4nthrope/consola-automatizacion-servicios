@@ -105,8 +105,9 @@ type view struct {
 	Last    *oplog.Entry  // last operation, for the status bar
 	Entry   *oplog.Entry  // set on the result page
 	Version string
-	Form    Form // module pages: values typed and errors per field
-	Data    any  // module pages: whatever the module passes to its template
+	Form    Form     // module pages: values typed and errors per field
+	Data    any      // module pages: whatever the module passes to its template
+	Mapa    []mapaVM // panel: the infrastructure map
 }
 
 // NewHandler returns the console routes.
@@ -353,7 +354,9 @@ func (s *server) resultado(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) inicio(w http.ResponseWriter, r *http.Request) {
-	s.render(w, http.StatusOK, "inicio.html", s.newView(r, "Panel", ""))
+	v := s.newView(r, "Panel", "")
+	v.Mapa = s.mapa()
+	s.render(w, http.StatusOK, "inicio.html", v)
 }
 
 func (s *server) modulo(w http.ResponseWriter, r *http.Request, m *Module) {

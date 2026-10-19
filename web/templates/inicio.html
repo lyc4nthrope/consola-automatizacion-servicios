@@ -30,6 +30,42 @@
   </dl>
 </section>
 
+<section class="block" aria-labelledby="mapa-titulo">
+  <h2 id="mapa-titulo" class="block-title">Infraestructura</h2>
+  <p class="mapa-intro">Por dónde llega la consola a cada VM. Elige una para que reciba las operaciones.</p>
+  <form class="mapa" method="post" action="/destino">{{/* without "volver", /destino comes back to the panel */}}
+    <ul class="mapa-arbol">
+      <li class="mapa-rama">
+        <span class="mapa-nodo"><i class="bi bi-laptop" aria-hidden="true"></i> Este equipo <span class="mapa-detalle">ejecuta la consola</span></span>
+        <ul class="mapa-arbol">
+          <li class="mapa-rama mapa-local">
+            <span class="mapa-nodo"><i class="bi bi-boxes" aria-hidden="true"></i> VirtualBox <span class="mapa-detalle">{{len .Mapa}} {{if eq (len .Mapa) 1}}VM configurada{{else}}VMs configuradas{{end}} en config.json</span></span>
+            <ul class="mapa-arbol mapa-vms">
+              {{- range .Mapa}}
+              <li class="mapa-rama mapa-vm canal-{{.Kind}}{{if .Current}} is-current{{end}}">
+                <button class="mapa-boton" type="submit" name="destino" value="{{.Name}}"{{if .Current}} aria-current="true"{{end}}>
+                  <span class="visually-hidden">Usar como destino:</span>
+                  <span class="mapa-vm-nombre" translate="no">{{.Name}}</span>
+                  <span class="mapa-vm-datos mono" translate="no">{{.VM}} · {{.IP}}</span>
+                  <span class="mapa-vm-canal">{{if eq .Kind "none"}}<i class="bi bi-slash-circle" aria-hidden="true"></i> {{end}}{{.Channel}}</span>
+                  {{- if .Current}}<span class="badge-c mapa-actual">Destino actual</span>{{end}}
+                </button>
+              </li>
+              {{- end}}
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </form>
+  <ul class="mapa-leyenda" aria-label="Qué significa cada línea">
+    <li><span class="mapa-muestra canal-ga" aria-hidden="true"></span> Guest Additions</li>
+    <li><span class="mapa-muestra canal-ssh" aria-hidden="true"></span> SSH</li>
+    <li><span class="mapa-muestra canal-sim" aria-hidden="true"></span> Simulado</li>
+    <li><i class="bi bi-slash-circle" aria-hidden="true"></i> Sin conexión (sin línea)</li>
+  </ul>
+</section>
+
 <section class="block" aria-labelledby="modulos-titulo">
   <h2 id="modulos-titulo" class="block-title">Módulos</h2>
   <ul class="modules">
