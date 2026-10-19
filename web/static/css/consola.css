@@ -1159,3 +1159,86 @@ h2 {
   gap: 0.5rem;
   margin-top: 1rem;
 }
+
+/* ---------- Login message (/etc/issue) ---------- */
+.issue-intro {
+  margin: 0 0 1rem;
+}
+
+.issue-datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.issue-datos legend {
+  margin-bottom: 0.35rem;
+}
+
+.field-hint-inline {
+  font-size: 0.8rem;
+  color: var(--c-muted);
+}
+
+.form-c textarea.form-control {
+  max-width: none;
+}
+
+.issue-preview {
+  margin-top: 1.25rem;
+}
+
+/* Reached through #vista-previa: focus moves here so screen readers read it, without a
+   frame around the whole block (it is not a control). */
+.issue-preview:focus {
+  outline: none;
+}
+
+.issue-preview h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.issue-screen,
+.issue-file {
+  margin: 0.5rem 0 0;
+  padding: 1rem;
+  overflow-x: auto;
+  border-radius: var(--c-radius);
+  background: var(--c-term-bg);
+  color: var(--c-term-text);
+  font-size: 0.85rem;
+  white-space: pre;
+}
+
+.issue-login {
+  color: var(--c-term-accent);
+}
+
+.issue-preview details {
+  margin-top: 0.75rem;
+}
+
+.issue-preview summary {
+  cursor: pointer;
+  color: var(--c-muted);
+  font-size: 0.85rem;
+}
+
+.issue-restore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.issue-restore .btn-link {
+  padding-left: 0;
+  color: var(--c-accent);
+}
+
+.issue-restore .field-hint {
+  margin: 0;
+}

@@ -21,6 +21,9 @@ func init() {
 		r.HandleFunc("GET /preparacion", s.preparacionPagina)
 		r.HandleFunc("POST /preparacion/instalar", s.instalarPaquete)
 		r.HandleFunc("POST /preparacion/eliminar", s.eliminarPaquete)
+		r.HandleFunc("POST /preparacion/issue", s.instalarIssue)
+		r.HandleFunc("POST /preparacion/issue/vista-previa", s.vistaPreviaIssue)
+		r.HandleFunc("POST /preparacion/issue/restaurar", s.restaurarIssue)
 	})
 }
 
@@ -28,8 +31,21 @@ func init() {
 // channel; modern scp copies files through sftp). Removing them would cut the console off.
 var channelPackages = []string{"openssh-server", "openssh-sftp-server"}
 
+// preparacionData is the page data. The page has several forms and one Form value, so
+// Formulario says which form the values and errors belong to.
+type preparacionData struct {
+	Formulario string        // "paquete" or "issue"
+	Issue      *issuePreview // set after "Vista previa"
+	Datos      []issueDato
+}
+
 func (s *server) preparacionPagina(w http.ResponseWriter, r *http.Request) {
-	s.renderModule(w, r, "preparacion", http.StatusOK, Form{}, nil)
+	s.renderPreparacion(w, r, http.StatusOK, Form{}, preparacionData{})
+}
+
+func (s *server) renderPreparacion(w http.ResponseWriter, r *http.Request, status int, form Form, data preparacionData) {
+	data.Datos = issueDatos
+	s.renderModule(w, r, "preparacion", status, form, data)
 }
 
 func (s *server) instalarPaquete(w http.ResponseWriter, r *http.Request) {
@@ -60,8 +76,8 @@ func paqueteDelFormulario(r *http.Request) (string, error) {
 
 // rechazarPaquete shows the page again with what the user typed and the error next to the field.
 func (s *server) rechazarPaquete(w http.ResponseWriter, r *http.Request, pkg string, err error) {
-	s.renderModule(w, r, "preparacion", http.StatusUnprocessableEntity,
-		Form{Values: map[string]string{"paquete": pkg}, Errors: FieldErrors(err)}, nil)
+	s.renderPreparacion(w, r, http.StatusUnprocessableEntity,
+		Form{Values: map[string]string{"paquete": pkg}, Errors: FieldErrors(err)}, preparacionData{Formulario: "paquete"})
 }
 
 // Fixed scripts for the checks that need more than an exit code. The package name is always

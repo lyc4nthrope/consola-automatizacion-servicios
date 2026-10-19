@@ -39,13 +39,16 @@
 
   document.querySelectorAll("form[data-operacion]").forEach(function (form) {
     form.addEventListener("submit", function (event) {
+      // Without event.submitter (old browsers) the button is a guess: the first one that runs something.
+      var button = event.submitter || form.querySelector("[type=submit]:not([data-local])");
+      // A button marked data-local (a preview, for example) runs nothing on the VM.
+      if (button && button.hasAttribute("data-local")) return;
       if (form.dataset.enviando === "1") {
         event.preventDefault();
         return;
       }
       form.dataset.enviando = "1";
       document.body.classList.add("is-running");
-      var button = event.submitter || form.querySelector("[type=submit]");
       if (button) {
         pending.push([form, button, button.innerHTML]);
         button.setAttribute("aria-disabled", "true");

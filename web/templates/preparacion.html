@@ -8,7 +8,7 @@
 <section class="block" aria-labelledby="paquetes-titulo">
   <h2 id="paquetes-titulo" class="block-title">Instalar y eliminar aplicaciones</h2>
   <form class="panel-c form-c" method="post" action="/preparacion/instalar" data-operacion="Instalar aplicación" novalidate>
-    {{template "resumen-errores" .Form}}
+    {{if eq .Data.Formulario "paquete"}}{{template "resumen-errores" .Form}}{{end}}
     <label class="form-label" for="paquete">Nombre del paquete</label>
     <input class="form-control mono" id="paquete" name="paquete" type="text" value="{{index .Form.Values "paquete"}}"
       maxlength="100" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
@@ -35,13 +35,53 @@
   {{- end}}
 </section>
 
+<section class="block" aria-labelledby="issue-titulo">
+  <h2 id="issue-titulo" class="block-title">Mensaje de entrada (/etc/issue)</h2>
+  <form class="panel-c form-c" method="post" action="/preparacion/issue" data-operacion="Cambiar mensaje de entrada" novalidate>
+    {{if eq .Data.Formulario "issue"}}{{template "resumen-errores" .Form}}{{end}}
+    <p class="field-hint issue-intro">Es el texto que la consola de la VM muestra antes de pedir el usuario. Los datos marcados los pone la VM en el momento de mostrarlo.</p>
+    <fieldset class="issue-datos">
+      <legend class="form-label">Datos de la VM</legend>
+      {{- range .Data.Datos}}
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="{{.Field}}" name="{{.Field}}" value="on"{{if index $.Form.Values .Field}} checked{{end}}>
+        <label class="form-check-label" for="{{.Field}}">{{.Label}} <span class="mono field-hint-inline" translate="no">{{.Escape}}</span></label>
+      </div>
+      {{- end}}
+    </fieldset>
+    <label class="form-label" for="mensaje">Mensaje</label>
+    <textarea class="form-control" id="mensaje" name="mensaje" rows="4" maxlength="500" spellcheck="true"
+      {{aria .Form "mensaje" "mensaje-ayuda"}}>
+{{index .Form.Values "mensaje"}}</textarea>
+    {{template "error-campo" (campo .Form "mensaje")}}
+    <p class="field-hint" id="mensaje-ayuda">Hasta 500 caracteres, con saltos de línea. Se muestra tal como lo escribes, incluidas las barras <span class="mono">\</span>.</p>
+    <div class="form-actions">
+      <button class="btn btn-outline-accent" type="submit" formaction="/preparacion/issue/vista-previa#vista-previa" data-local><i class="bi bi-eye" aria-hidden="true"></i> Vista previa</button>
+      <button class="btn btn-accent" type="submit"><i class="bi bi-display" aria-hidden="true"></i> Instalar en la VM</button>
+    </div>
+    {{- with .Data.Issue}}
+    <section class="issue-preview" id="vista-previa" aria-labelledby="vista-previa-titulo" tabindex="-1">
+      <h3 class="form-label" id="vista-previa-titulo">Vista previa</h3>
+      <p class="field-hint">Con datos de ejemplo; la VM pone los suyos al mostrarlo.</p>
+      <pre class="issue-screen mono" translate="no">
+{{.Ejemplo}}<span class="issue-login">{{$.Current.VM}} login: </span></pre>
+      <details>
+        <summary>Contenido del archivo /etc/issue</summary>
+        <pre class="issue-file mono" translate="no">
+{{.Archivo}}</pre>
+      </details>
+    </section>
+    {{- end}}
+  </form>
+  <form class="issue-restore" method="post" action="/preparacion/issue/restaurar" data-operacion="Restaurar mensaje de entrada">
+    <button class="btn btn-link btn-sm" type="submit" aria-describedby="restaurar-ayuda"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Restaurar el mensaje original</button>
+    <span class="field-hint" id="restaurar-ayuda">Vuelve al mensaje que tenía la VM antes de que la consola lo cambiara.</span>
+  </form>
+</section>
+
 <section class="block" aria-labelledby="pendientes-titulo">
   <h2 id="pendientes-titulo" class="block-title">Próximamente</h2>
   <ul class="actions">
-    <li class="action">
-      <span>Mensaje de entrada (/etc/issue)</span>
-      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
-    </li>
     <li class="action">
       <span>Nombre de host y /etc/hosts</span>
       <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
