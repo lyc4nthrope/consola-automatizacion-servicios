@@ -24,7 +24,13 @@ const exitMarker = "__CONSOLA_EXIT__:"
 // login has none), runs the command through env (so only real programs run, never shell
 // builtins such as exec, exit or eval) and prints its exit code after a marker on stderr,
 // so the console knows the code of the command itself and not one of VBoxManage.
-const runWrapper = `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; env -- "$0" "$@"; s=$?; printf '\n` + exitMarker + `%d\n' "$s" >&2`
+//
+// VBoxManage drops empty arguments, so each argument travels with argPrefix in front and the
+// script removes that first character before running the command.
+const runWrapper = `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; for a do shift; set -- "$@" "${a#?}"; done; env -- "$0" "$@"; s=$?; printf '\n` + exitMarker + `%d\n' "$s" >&2`
+
+// argPrefix is added to every argument so none is empty on the VBoxManage command line.
+const argPrefix = "x"
 
 // GuestControl runs commands and copies files through VirtualBox Guest Additions
 // (VBoxManage guestcontrol). It is the first channel to a VM, before SSH is set up.
@@ -65,7 +71,9 @@ func (g *GuestControl) Run(ctx context.Context, c Command) (Result, error) {
 		args = append(args, "--timeout", guestTimeoutMS(deadline))
 	}
 	args = append(args, "--", "-c", runWrapper, c.Name)
-	args = append(args, c.Args...)
+	for _, a := range c.Args {
+		args = append(args, argPrefix+a)
+	}
 
 	stdout, stderr, _, err := g.run(ctx, args)
 	if ctx.Err() != nil {
@@ -85,8 +93,9 @@ func (g *GuestControl) Run(ctx context.Context, c Command) (Result, error) {
 	return res, nil
 }
 
-// CopyTo implements Executor. The file is staged under its final name and copied with
-// --target-directory, so the guest path does not depend on how copyto reads its arguments.
+// CopyTo implements Executor. The file is staged first, so VBoxManage always gets a clean
+// absolute host path with the source mode, and the guest destination is the full file path
+// (copyto rejects --target-directory when that directory already exists).
 func (g *GuestControl) CopyTo(ctx context.Context, localPath, remotePath string) error {
 	if err := checkRemotePath(remotePath); err != nil {
 		return err
@@ -99,11 +108,11 @@ func (g *GuestControl) CopyTo(ctx context.Context, localPath, remotePath string)
 		return err
 	}
 	defer os.RemoveAll(dir)
-	staged := filepath.Join(dir, path.Base(remotePath))
+	staged := filepath.Join(dir, "archivo")
 	if err := copyFile(localPath, staged); err != nil {
 		return err
 	}
-	args := append(g.base("copyto"), "--target-directory", path.Dir(remotePath), staged)
+	args := append(g.base("copyto"), staged, remotePath)
 	return g.runCopy(ctx, args)
 }
 
@@ -121,11 +130,11 @@ func (g *GuestControl) CopyFrom(ctx context.Context, remotePath, localPath strin
 		return err
 	}
 	defer os.RemoveAll(dir)
-	args := append(g.base("copyfrom"), "--target-directory", dir, remotePath)
+	got := filepath.Join(dir, "archivo")
+	args := append(g.base("copyfrom"), remotePath, got)
 	if err := g.runCopy(ctx, args); err != nil {
 		return err
 	}
-	got := filepath.Join(dir, path.Base(remotePath))
 	// A file from the VM may hold secrets (keys, /etc/shadow): it stays private on the host.
 	if err := os.Chmod(got, 0o600); err != nil {
 		return err
@@ -192,7 +201,7 @@ func (g *GuestControl) explain(stderr string) error {
 	low := strings.ToLower(strings.Join(own, "\n"))
 	var msg string
 	switch {
-	case strings.Contains(low, "not found") || strings.Contains(low, "verr_file_not_found") || strings.Contains(low, "verr_path_not_found"):
+	case strings.Contains(low, "not found") || strings.Contains(low, "no such file or directory") || strings.Contains(low, "verr_file_not_found") || strings.Contains(low, "verr_path_not_found"):
 		msg = fmt.Sprintf("El archivo o la carpeta no existe en la VM «%s»", g.VM)
 	case strings.Contains(low, "could not find a registered machine"):
 		msg = fmt.Sprintf("La VM «%s» no existe en VirtualBox; revisa el campo vm de config.json", g.VM)

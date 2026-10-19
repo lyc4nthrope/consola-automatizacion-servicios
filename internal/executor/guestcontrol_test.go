@@ -57,7 +57,7 @@ func TestGuestControlRunArguments(t *testing.T) {
 	want := []string{"guestcontrol", "consola-pruebas", "run",
 		"--username", "root", "--passwordfile", g.PasswordFile, "--quiet",
 		"--exe", "/bin/sh", "--wait-stdout", "--wait-stderr",
-		"--", "-c", runWrapper, "apt-get", "install", "-y", "tree; reboot"}
+		"--", "-c", runWrapper, "apt-get", "xinstall", "x-y", "xtree; reboot"}
 	if got := r.args[0]; !slices.Equal(got, want) {
 		t.Fatalf("args =\n%q\nwant\n%q", got, want)
 	}
@@ -186,13 +186,15 @@ func TestParseRunResult(t *testing.T) {
 
 func TestChannelErrorsAreExplained(t *testing.T) {
 	cases := map[string]string{
-		"VBoxManage: error: Machine \"consola-pruebas\" is not currently running":      "está apagada",
-		"VBoxManage: error: The guest execution service is not ready (yet)":            "Guest Additions",
-		"VBoxManage: error: The specified user was not able to logon on guest":         "contraseña",
-		"VBoxManage: error: Could not find a registered machine named 'x'":             "no existe en VirtualBox",
-		"VBoxManage: error: algo raro":                                                 "Guest Additions",
-		"VBoxManage: error: File \"/etc/no-existe\" not found (VERR_FILE_NOT_FOUND)":   "no existe en la VM",
-		"warning: authentication fallida en el programa\nVBoxManage: error: algo raro": "revisa que estén instaladas", // guest output never decides the message
+		"VBoxManage: error: Machine \"balanceador\" is not running (currently powered off)!":                            "está apagada", // real VirtualBox 7.2 text
+		"VBoxManage: error: Machine \"consola-pruebas\" is not currently running":                                       "está apagada",
+		"VBoxManage: error: The guest execution service is not ready (yet)":                                             "Guest Additions",
+		"VBoxManage: error: The specified user was not able to logon on guest":                                          "contraseña",
+		"VBoxManage: error: Could not find a registered machine named 'x'":                                              "no existe en VirtualBox",
+		"VBoxManage: error: algo raro":                                                                                  "Guest Additions",
+		"VBoxManage: error: File \"/etc/no-existe\" not found (VERR_FILE_NOT_FOUND)":                                    "no existe en la VM",
+		"VBoxManage: error: Querying guest filesystem object information failed: No such file or directory \"/tmp/x\".": "no existe en la VM",
+		"warning: authentication fallida en el programa\nVBoxManage: error: algo raro":                                  "revisa que estén instaladas", // guest output never decides the message
 	}
 	for stderr, want := range cases {
 		r := &recorder{stderr: stderr, exitCode: 1}
@@ -243,7 +245,7 @@ func TestRunWrapperInARealShell(t *testing.T) {
 		wantOut  string
 		wantCode string
 	}{
-		{"printf", []string{"[%s]", "a b", "$(id)", "it's", ""}, "[a b][$(id)][it's][]", "0"},
+		{"printf", []string{"[%s]", "a b", "$(id)", "it's", "", "x", "-n"}, "[a b][$(id)][it's][][x][-n]", "0"},
 		{"false", nil, "", "1"},
 		{"sh", []string{"-c", "exit 3"}, "", "3"},
 		{"comando-que-no-existe", nil, "", "127"},
@@ -252,7 +254,11 @@ func TestRunWrapperInARealShell(t *testing.T) {
 		{"eval", []string{"echo inyectado"}, "", "127"},
 	}
 	for _, c := range cases {
-		cmd := exec.Command("/bin/sh", append([]string{"-c", runWrapper, c.name}, c.args...)...)
+		argv := []string{"-c", runWrapper, c.name}
+		for _, a := range c.args {
+			argv = append(argv, argPrefix+a)
+		}
+		cmd := exec.Command("/bin/sh", argv...)
 		cmd.Env = []string{"PATH="} // worst case for a guest login: an empty PATH, so the wrapper must set it
 		var stdout, stderr strings.Builder
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -267,10 +273,10 @@ func TestRunWrapperInARealShell(t *testing.T) {
 	}
 }
 
-func TestCopyToStagesTheFileWithItsFinalName(t *testing.T) {
+func TestCopyToPassesTheFullGuestPath(t *testing.T) {
 	var staged string
 	r := &recorder{onRun: func(args []string) {
-		staged = args[len(args)-1]
+		staged = args[len(args)-2]
 		b, err := os.ReadFile(staged)
 		if err != nil || string(b) != "contenido" {
 			t.Errorf("staged file %s: %q, %v", staged, b, err)
@@ -288,8 +294,8 @@ func TestCopyToStagesTheFileWithItsFinalName(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := r.args[0]
-	want := []string{"guestcontrol", "consola-pruebas", "copyto", "--username", "root", "--passwordfile", g.PasswordFile, "--quiet", "--target-directory", "/etc/consola", staged}
-	if !slices.Equal(args, want) || filepath.Base(staged) != "issue-nuevo" {
+	want := []string{"guestcontrol", "consola-pruebas", "copyto", "--username", "root", "--passwordfile", g.PasswordFile, "--quiet", staged, "/etc/consola/issue-nuevo"}
+	if !slices.Equal(args, want) || !filepath.IsAbs(staged) {
 		t.Fatalf("args = %q, want %q", args, want)
 	}
 	if _, err := os.Stat(staged); !os.IsNotExist(err) {
@@ -299,9 +305,8 @@ func TestCopyToStagesTheFileWithItsFinalName(t *testing.T) {
 
 func TestCopyFromLeavesThePrivateModeOnTheHost(t *testing.T) {
 	r := &recorder{}
-	r.onRun = func(args []string) {
-		dir := args[slices.Index(args, "--target-directory")+1]
-		_ = os.WriteFile(filepath.Join(dir, "shadow"), []byte("root:$y$...\n"), 0o644)
+	r.onRun = func(args []string) { // VBoxManage writes the last argument
+		_ = os.WriteFile(args[len(args)-1], []byte("root:$y$...\n"), 0o644)
 	}
 	g := newTestGC(t, r)
 	local := filepath.Join(t.TempDir(), "shadow")
@@ -327,9 +332,8 @@ func TestCopyFromFailureLeavesNothingBehind(t *testing.T) {
 
 func TestCopyFromMovesTheFileToItsLocalPath(t *testing.T) {
 	r := &recorder{}
-	r.onRun = func(args []string) { // VBoxManage writes <target-directory>/<basename>
-		dir := args[slices.Index(args, "--target-directory")+1]
-		_ = os.WriteFile(filepath.Join(dir, "hosts"), []byte("127.0.1.1 pruebas\n"), 0o644)
+	r.onRun = func(args []string) { // VBoxManage writes the last argument
+		_ = os.WriteFile(args[len(args)-1], []byte("127.0.1.1 pruebas\n"), 0o644)
 	}
 	g := newTestGC(t, r)
 	local := filepath.Join(t.TempDir(), "hosts-de-la-vm")
@@ -339,7 +343,7 @@ func TestCopyFromMovesTheFileToItsLocalPath(t *testing.T) {
 	if b, _ := os.ReadFile(local); string(b) != "127.0.1.1 pruebas\n" {
 		t.Fatalf("local file = %q", b)
 	}
-	if got := r.args[0]; got[2] != "copyfrom" || got[len(got)-1] != "/etc/hosts" {
+	if got := r.args[0]; got[2] != "copyfrom" || got[len(got)-2] != "/etc/hosts" || filepath.Dir(got[len(got)-1]) == filepath.Dir(local) {
 		t.Fatalf("args = %q", got)
 	}
 }
