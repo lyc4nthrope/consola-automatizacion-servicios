@@ -142,11 +142,27 @@ func (s *server) instalar(w http.ResponseWriter, r *http.Request) {
 |---|---|
 | `data-operacion="…"` en el `<form>` | Muestra "Ejecutando…" con cronómetro y bloquea el doble envío (sin deshabilitar el botón, así se envía su `name`/`value`) |
 | `{{aria .Form "campo"}}` | Pone `aria-invalid` y `aria-describedby` solo cuando el campo tiene error |
+| `{{aria .Form "campo" "campo-ayuda"}}` | Igual, y además enlaza siempre los textos de ayuda con esos `id` (el lector de pantalla los lee al entrar al campo) |
+| `data-operacion="…"` en un `<button formaction="/modulo/otra">` | Un mismo formulario con dos acciones (por ejemplo Instalar y Eliminar): el botón usa su propio texto de "Ejecutando…" |
 | `{{template "error-campo" (campo .Form "campo")}}` | El mensaje de error debajo del campo, enlazado a él |
 | `{{template "resumen-errores" .Form}}` | Resumen anunciado (`role="alert"`) con enlaces a cada campo |
 | `FieldErrors(err1, err2, …)` | Convierte errores de `validate` en `Form.Errors`; un error sin campo va en `Errors[""]` |
 
 Al volver con errores, el foco va solo al primer campo inválido. Los nombres de campo usan minúsculas, números y `-`.
+
+## Mostrar el parcial de otra parte sin depender de él
+
+`{{opcional "nombre" .}}` muestra el parcial `{{define "nombre"}}` si algún `web/templates/_*.html` lo define, y no muestra
+nada si todavía no existe. Así una página incluye el trabajo de otra parte antes de que llegue, sin que nadie edite archivos
+ajenos. Con `with` se pone un texto mientras tanto:
+
+```html
+{{with opcional "llaves-root" .}}{{.}}{{else}}<p>En construcción</p>{{end}}
+```
+
+Solo las páginas pueden usar `opcional`; si un parcial lo usa, la consola no arranca (un parcial que se llamara a sí mismo
+no terminaría nunca). La página de Preparación ya lo usa para el formulario de llaves de root de la Parte B: basta con que
+exista `web/templates/_llaves-root.html` con `{{define "llaves-root"}}` para que aparezca.
 
 ## Piezas disponibles
 
