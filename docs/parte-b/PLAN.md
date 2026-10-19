@@ -196,7 +196,7 @@ func (s *SSH) CopyFrom(ctx context.Context, remote, local string) error
 1. Si no existe, generar en el host `keys/consola_ed25519` (DB4).
 2. `systemctl is-active ssh`; si no está activo: `apt-get install -y openssh-server` (con `DEBIAN_FRONTEND=noninteractive`) y `systemctl enable --now ssh`.
 3. `install -d -m 700 -o root -g root /root/.ssh`.
-4. `CopyFrom /root/.ssh/authorized_keys` (si no existe, se parte de vacío) → `MergeAuthorizedKeys(actual, nueva) string` (función pura, sin duplicar) → `CopyTo /tmp/consola-ak` → `install -m 600 -o root -g root /tmp/consola-ak /root/.ssh/authorized_keys` → `rm -f /tmp/consola-ak`.
+4. `test -e /root/.ssh/authorized_keys` con `AlsoOK: []int{1}` (código 1 = no existe; por Guest Additions, `CopyFrom` de un archivo que no existe devuelve error, no un archivo vacío) → si existe, `CopyFrom /root/.ssh/authorized_keys`; si no, se parte de vacío → `MergeAuthorizedKeys(actual, nueva) string` (función pura, sin duplicar) → `CopyTo /tmp/consola-ak` → `install -m 600 -o root -g root /tmp/consola-ak /root/.ssh/authorized_keys` → `rm -f /tmp/consola-ak`.
 5. Probar con el adaptador SSH: `hostname`. Solo si responde: `state.SetExecutor(destino, ssh)`.
 
 **Tests:** `MergeAuthorizedKeys` con archivo vacío, con la llave ya presente (no la duplica), con comentarios y líneas en blanco; el plan exacto de comandos con `Fake`; si la prueba SSH falla, el canal **no** cambia.
