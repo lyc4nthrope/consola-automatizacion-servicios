@@ -154,14 +154,23 @@ func campo(f Form, name string) field {
 	return field{Name: name, Error: f.Errors[name]}
 }
 
-// ariaCampo returns the attributes that link an invalid input to its error message, or
-// nothing when the field is valid: <input id="paquete" name="paquete" {{aria .Form "paquete"}}>.
-func ariaCampo(f Form, name string) template.HTMLAttr {
+// ariaCampo returns the attributes that link an input to its error message (only when the
+// field is invalid) and to optional hint ids: <input id="paquete" name="paquete" {{aria .Form "paquete"}}>
+// or, with a hint that is always read, {{aria .Form "paquete" "paquete-ayuda"}}.
+func ariaCampo(f Form, name string, hints ...string) template.HTMLAttr {
 	checkFieldName(name)
-	if f.Errors[name] == "" {
+	for _, h := range hints {
+		checkFieldName(h)
+	}
+	ids, attrs := hints, ""
+	if f.Errors[name] != "" {
+		ids = append([]string{name + "-error"}, hints...)
+		attrs = `aria-invalid="true" `
+	}
+	if len(ids) == 0 {
 		return ""
 	}
-	return template.HTMLAttr(`aria-invalid="true" aria-describedby="` + name + `-error"`)
+	return template.HTMLAttr(attrs + `aria-describedby="` + strings.Join(ids, " ") + `"`)
 }
 
 // renderModule shows a module's own page, web/templates/<slug>.html, with the module's data

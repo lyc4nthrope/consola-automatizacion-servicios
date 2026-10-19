@@ -3,6 +3,7 @@ package web
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"text/template/parse"
 	"time"
 
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/app"
@@ -54,6 +56,26 @@ var templateFuncs = template.FuncMap{
 	},
 	"campo": campo,
 	"aria":  ariaCampo,
+	// opcional is bound to each page's own templates in parsePages.
+	"opcional": func(string, any) (template.HTML, error) {
+		return "", errors.New("opcional is only available inside a page")
+	},
+}
+
+// optionalPartial renders the template name of the page t with data, or nothing when no
+// partial defines it: {{opcional "llaves-root" .}}. A part can show another part's partial
+// before that file exists, and neither edits the other's files.
+func optionalPartial(t *template.Template) func(name string, data any) (template.HTML, error) {
+	return func(name string, data any) (template.HTML, error) {
+		if t.Lookup(name) == nil {
+			return "", nil
+		}
+		var b strings.Builder
+		if err := t.ExecuteTemplate(&b, name, data); err != nil {
+			return "", err
+		}
+		return template.HTML(b.String()), nil // escaped by html/template when it ran
+	}
 }
 
 // formatDuration writes durations the way the interface shows them: "320 ms", "4,2 s", "2 min 5 s".
@@ -147,9 +169,12 @@ func parsePages(templates fs.FS) (map[string]*template.Template, error) {
 
 	owned := map[string]string{} // template name -> file that defines it
 	for _, f := range shared {
-		names, err := definedNames(templates, f)
+		names, usesOpcional, err := definedNames(templates, f)
 		if err != nil {
 			return nil, err
+		}
+		if usesOpcional { // a partial shown by opcional that calls opcional could recurse forever
+			return nil, fmt.Errorf("%s must not use opcional: only pages can", f)
 		}
 		for _, n := range names {
 			if f != "templates/layout.html" && (n == "content" || n == "layout") {
@@ -161,7 +186,7 @@ func parsePages(templates fs.FS) (map[string]*template.Template, error) {
 
 	out := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
-		names, err := definedNames(templates, p)
+		names, _, err := definedNames(templates, p)
 		if err != nil {
 			return nil, err
 		}
@@ -177,28 +202,76 @@ func parsePages(templates fs.FS) (map[string]*template.Template, error) {
 		if !slices.Contains(names, "content") {
 			return nil, fmt.Errorf("page %s must define {{define \"content\"}}", p)
 		}
+		t.Funcs(template.FuncMap{"opcional": optionalPartial(t)})
 		out[path.Base(p)] = t
 	}
 	return out, nil
 }
 
-// definedNames lists the {{define}} blocks of one template file.
-func definedNames(templates fs.FS, file string) ([]string, error) {
+// definedNames lists the {{define}} blocks of one template file and tells whether the file
+// calls the opcional function.
+func definedNames(templates fs.FS, file string) ([]string, bool, error) {
 	src, err := fs.ReadFile(templates, file)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	t, err := template.New(file).Funcs(templateFuncs).Parse(string(src))
 	if err != nil {
-		return nil, fmt.Errorf("parsing template %s: %w", file, err)
+		return nil, false, fmt.Errorf("parsing template %s: %w", file, err)
 	}
 	var names []string
+	uses := false
 	for _, d := range t.Templates() {
 		if d.Name() != file {
 			names = append(names, d.Name())
 		}
+		if d.Tree != nil && callsFunc(d.Tree.Root, "opcional") {
+			uses = true
+		}
 	}
-	return names, nil
+	return names, uses, nil
+}
+
+// callsFunc reports whether the template tree n calls the function name.
+func callsFunc(n parse.Node, name string) bool {
+	any := func(nodes ...parse.Node) bool {
+		for _, c := range nodes {
+			if c != nil && callsFunc(c, name) {
+				return true
+			}
+		}
+		return false
+	}
+	branch := func(b parse.BranchNode) bool {
+		return (b.Pipe != nil && callsFunc(b.Pipe, name)) || (b.List != nil && callsFunc(b.List, name)) || (b.ElseList != nil && callsFunc(b.ElseList, name))
+	}
+	switch n := n.(type) {
+	case *parse.ListNode:
+		return any(n.Nodes...)
+	case *parse.ActionNode:
+		return n.Pipe != nil && callsFunc(n.Pipe, name)
+	case *parse.PipeNode:
+		for _, c := range n.Cmds {
+			if callsFunc(c, name) {
+				return true
+			}
+		}
+	case *parse.CommandNode:
+		return any(n.Args...)
+	case *parse.ChainNode:
+		return callsFunc(n.Node, name)
+	case *parse.IfNode:
+		return branch(n.BranchNode)
+	case *parse.RangeNode:
+		return branch(n.BranchNode)
+	case *parse.WithNode:
+		return branch(n.BranchNode)
+	case *parse.TemplateNode:
+		return n.Pipe != nil && callsFunc(n.Pipe, name)
+	case *parse.IdentifierNode:
+		return n.Ident == name
+	}
+	return false
 }
 
 // allowedHosts returns the Host header values that address this console: the listen

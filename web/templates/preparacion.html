@@ -1,0 +1,51 @@
+{{define "content"}}
+<header class="page-head">
+  <p class="eyebrow"><i class="bi {{.Module.Icon}}" aria-hidden="true"></i> Módulo</p>
+  <h1>{{.Module.Title}}</h1>
+  <p class="lead-c">{{.Module.Summary}}</p>
+</header>
+
+<section class="block" aria-labelledby="paquetes-titulo">
+  <h2 id="paquetes-titulo" class="block-title">Instalar y eliminar aplicaciones</h2>
+  <form class="panel-c form-c" method="post" action="/preparacion/instalar" data-operacion="Instalar aplicación" novalidate>
+    {{template "resumen-errores" .Form}}
+    <label class="form-label" for="paquete">Nombre del paquete</label>
+    <input class="form-control mono" id="paquete" name="paquete" type="text" value="{{index .Form.Values "paquete"}}"
+      maxlength="100" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "paquete" "paquete-ayuda"}}>
+    {{template "error-campo" (campo .Form "paquete")}}
+    <p class="field-hint" id="paquete-ayuda">El nombre en los repositorios de Debian, por ejemplo <span class="mono" translate="no">tree</span>. Se instala sin preguntas y con la lista de paquetes actualizada.</p>
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-download" aria-hidden="true"></i> Instalar</button>
+      <button class="btn btn-outline-accent" type="submit" formaction="/preparacion/eliminar" data-operacion="Eliminar aplicación" aria-describedby="eliminar-ayuda"><i class="bi bi-trash3" aria-hidden="true"></i> Eliminar</button>
+    </div>
+    <p class="field-hint" id="eliminar-ayuda">Antes de eliminar, la consola revisa que no sea un paquete esencial ni el que usa la consola para conectarse, y que no se lleve otras aplicaciones con él.</p>
+  </form>
+</section>
+
+<section class="block" aria-labelledby="llaves-titulo">
+  <h2 id="llaves-titulo" class="block-title">Llaves SSH de root</h2>
+  {{- with opcional "llaves-root" .}}{{.}}{{else}}
+  <ul class="actions">
+    <li class="action">
+      <span>Generar y autorizar las llaves de root</span>
+      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
+    </li>
+  </ul>
+  {{- end}}
+</section>
+
+<section class="block" aria-labelledby="pendientes-titulo">
+  <h2 id="pendientes-titulo" class="block-title">Próximamente</h2>
+  <ul class="actions">
+    <li class="action">
+      <span>Mensaje de entrada (/etc/issue)</span>
+      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
+    </li>
+    <li class="action">
+      <span>Nombre de host y /etc/hosts</span>
+      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
+    </li>
+  </ul>
+</section>
+{{end}}

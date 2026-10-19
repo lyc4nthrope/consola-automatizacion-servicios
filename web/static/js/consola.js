@@ -52,7 +52,9 @@
         button.textContent = "Ejecutando…";
       }
       // Announced once by screen readers; the timer next to it is visual only.
-      if (status) status.textContent = "Ejecutando «" + form.dataset.operacion + "»…";
+      // A button can name its own operation (one form, "Instalar" and "Eliminar").
+      var operacion = (button && button.dataset.operacion) || form.dataset.operacion;
+      if (status) status.textContent = "Ejecutando «" + operacion + "»…";
       var start = Date.now();
       function tick() {
         if (timer) timer.textContent = Math.floor((Date.now() - start) / 1000) + " s";

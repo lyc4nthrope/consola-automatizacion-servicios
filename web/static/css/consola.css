@@ -1122,3 +1122,40 @@ h2 {
 .error-summary a {
   color: inherit;
 }
+
+/* ---------- Module forms ---------- */
+.panel-c {
+  max-width: 40rem;
+  padding: 1.25rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  background: var(--c-surface);
+}
+
+.form-c .form-label {
+  font-weight: 600;
+}
+
+.form-c .form-control {
+  max-width: 24rem;
+  background-color: var(--c-bg);
+  color: var(--c-text);
+}
+
+.form-c .form-control:focus {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 0.2rem var(--c-accent-soft);
+}
+
+.field-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--c-muted);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
