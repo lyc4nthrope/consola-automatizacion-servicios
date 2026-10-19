@@ -31,7 +31,14 @@ type Plan struct {
 	Timeout  time.Duration      // limit for the whole operation; DefaultTimeout if zero
 	AlsoOK   []int              // exit codes besides 0 that mean success (e.g. 3 for `systemctl status` of a stopped unit)
 
-	// Success, if set, writes the message for a successful operation from the results.
+	// Then, if set, runs after every command in Commands succeeded and returns the next
+	// commands, built from those results: for example a file read with `cat`, changed by a
+	// pure Go function and written back. They run in the same operation and log entry. A
+	// non-nil error stops the operation; its text is the message for the user.
+	Then func([]executor.Result) ([]executor.Command, error)
+
+	// Success, if set, writes the message for a successful operation from the results
+	// (those of Commands, then those of the commands returned by Then).
 	Success func([]executor.Result) string
 	// Explain, if set, turns a known failure into advice; "" keeps the default message.
 	Explain func(oplog.Step) string
@@ -82,28 +89,22 @@ func (r *Runner) Run(ctx context.Context, p Plan) (oplog.Entry, error) {
 
 	results := make([]executor.Result, 0, len(p.Commands))
 	e.OK = true
-	for _, c := range p.Commands {
-		start := time.Now()
-		res, err := ex.Run(ctx, c)
-		step := oplog.Step{
-			Cmd:        c.String(),
-			Stdout:     res.Stdout,
-			Stderr:     res.Stderr,
-			ExitCode:   res.ExitCode,
-			DurationMS: time.Since(start).Milliseconds(),
+	run := func(cmds []executor.Command) {
+		for _, c := range cmds {
+			if !r.step(ctx, ex, p, c, timeout, &e, &results) {
+				return
+			}
 		}
+	}
+	run(p.Commands)
+	if e.OK && p.Then != nil {
+		next, err := p.Then(results)
 		if err != nil {
-			step.Error = err.Error()
+			e.OK = false
+			e.Message = err.Error()
+		} else {
+			run(next)
 		}
-		e.Steps = append(e.Steps, step)
-		results = append(results, res)
-
-		if err == nil && (res.ExitCode == 0 || slices.Contains(p.AlsoOK, res.ExitCode)) {
-			continue
-		}
-		e.OK = false
-		e.Message = failure(ctx, p, step, err, timeout)
-		break
 	}
 
 	if e.OK {
@@ -113,6 +114,31 @@ func (r *Runner) Run(ctx context.Context, p Plan) (oplog.Entry, error) {
 		}
 	}
 	return r.log.Add(e)
+}
+
+// step runs one command and records it; it returns false when the operation must stop.
+func (r *Runner) step(ctx context.Context, ex executor.Executor, p Plan, c executor.Command, timeout time.Duration, e *oplog.Entry, results *[]executor.Result) bool {
+	start := time.Now()
+	res, err := ex.Run(ctx, c)
+	step := oplog.Step{
+		Cmd:        c.String(),
+		Stdout:     res.Stdout,
+		Stderr:     res.Stderr,
+		ExitCode:   res.ExitCode,
+		DurationMS: time.Since(start).Milliseconds(),
+	}
+	if err != nil {
+		step.Error = err.Error()
+	}
+	e.Steps = append(e.Steps, step)
+	*results = append(*results, res)
+
+	if err == nil && (res.ExitCode == 0 || slices.Contains(p.AlsoOK, res.ExitCode)) {
+		return true
+	}
+	e.OK = false
+	e.Message = failure(ctx, p, step, err, timeout)
+	return false
 }
 
 func failure(ctx context.Context, p Plan, step oplog.Step, err error, timeout time.Duration) string {

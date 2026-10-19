@@ -275,3 +275,111 @@ func TestChannelErrorMessageReachesTheUser(t *testing.T) {
 		t.Fatalf("the technical detail must stay in the step: %q", e.Steps[0].Error)
 	}
 }
+
+func TestThenBuildsTheNextCommandsFromTheResults(t *testing.T) {
+	f := &executor.Fake{RunFunc: func(c executor.Command) (executor.Result, error) {
+		if c.Name == "cat" {
+			return executor.Result{Stdout: "viejo\n"}, nil
+		}
+		return executor.Result{Stdout: c.Name + "\n"}, nil
+	}}
+	r, _ := setup(t, f)
+	var seen []executor.Result
+	e, err := r.Run(context.Background(), Plan{
+		Action: "Cambiar archivo", Target: "pruebas",
+		Commands: []executor.Command{cmd("hostname"), cmd("cat", "/etc/x")},
+		Then: func(res []executor.Result) ([]executor.Command, error) {
+			seen = res
+			return []executor.Command{cmd("escribir", strings.ToUpper(res[1].Stdout))}, nil
+		},
+		Success: func(res []executor.Result) string {
+			return strings.TrimSpace(res[2].Stdout) + " de " + strings.TrimSpace(res[1].Stdout)
+		},
+	})
+	if err != nil || !e.OK {
+		t.Fatalf("entry = %+v, err %v", e, err)
+	}
+	if len(seen) != 2 || seen[1].Stdout != "viejo\n" {
+		t.Fatalf("Then saw %+v, want the results of Commands", seen)
+	}
+	calls := f.Calls()
+	if len(calls) != 3 || calls[2].Name != "escribir" || calls[2].Args[0] != "VIEJO\n" {
+		t.Fatalf("calls = %+v", calls)
+	}
+	if len(e.Steps) != 3 || e.Steps[2].Cmd != "escribir 'VIEJO\n'" {
+		t.Fatalf("every command, also those from Then, is recorded in the same entry: %+v", e.Steps)
+	}
+	if e.Message != "escribir de viejo" {
+		t.Fatalf("Success must see all results: %q", e.Message)
+	}
+}
+
+func TestThenIsSkippedWhenACommandFails(t *testing.T) {
+	f := &executor.Fake{RunFunc: func(c executor.Command) (executor.Result, error) { return executor.Result{ExitCode: 1}, nil }}
+	r, _ := setup(t, f)
+	called := false
+	e, _ := r.Run(context.Background(), Plan{Action: "x", Target: "pruebas", Commands: []executor.Command{cmd("cat", "/etc/x")},
+		Then: func([]executor.Result) ([]executor.Command, error) { called = true; return nil, nil }})
+	if called || e.OK || len(f.Calls()) != 1 {
+		t.Fatalf("Then must not run after a failure: called=%v entry=%+v", called, e)
+	}
+}
+
+func TestThenErrorStopsTheOperation(t *testing.T) {
+	f := &executor.Fake{}
+	r, _ := setup(t, f)
+	e, _ := r.Run(context.Background(), Plan{Action: "x", Target: "pruebas", Commands: []executor.Command{cmd("cat", "/etc/x")},
+		Then: func([]executor.Result) ([]executor.Command, error) {
+			return []executor.Command{cmd("escribir")}, errors.New("El archivo de la VM no tiene el formato esperado.")
+		},
+		Success: func([]executor.Result) string { return "no" }})
+	if e.OK || e.Message != "El archivo de la VM no tiene el formato esperado." || len(f.Calls()) != 1 || len(e.Steps) != 1 {
+		t.Fatalf("entry = %+v, calls %v", e, f.Calls())
+	}
+}
+
+func TestThenCommandsCanFail(t *testing.T) {
+	f := &executor.Fake{RunFunc: func(c executor.Command) (executor.Result, error) {
+		if c.Name == "escribir" {
+			return executor.Result{ExitCode: 2}, nil
+		}
+		return executor.Result{}, nil
+	}}
+	r, _ := setup(t, f)
+	e, _ := r.Run(context.Background(), Plan{Action: "x", Target: "pruebas", Commands: []executor.Command{cmd("cat")},
+		Then: func([]executor.Result) ([]executor.Command, error) {
+			return []executor.Command{cmd("escribir"), cmd("verificar")}, nil
+		},
+		Explain: func(st oplog.Step) string { return "consejo para " + st.Cmd }})
+	if e.OK || e.Message != "consejo para escribir" || len(f.Calls()) != 2 {
+		t.Fatalf("a failing command from Then stops the operation and is explained: %+v", e)
+	}
+}
+
+// slowOn blocks only the command named name, until its context ends.
+type slowOn struct{ name string }
+
+func (s *slowOn) Name() string                                   { return "Simulado" }
+func (s *slowOn) CopyTo(context.Context, string, string) error   { return nil }
+func (s *slowOn) CopyFrom(context.Context, string, string) error { return nil }
+func (s *slowOn) Run(ctx context.Context, c executor.Command) (executor.Result, error) {
+	if c.Name != s.name {
+		return executor.Result{}, nil
+	}
+	<-ctx.Done()
+	return executor.Result{ExitCode: -1}, ctx.Err()
+}
+
+func TestThenSharesTheOperationTimeout(t *testing.T) {
+	r, _ := setup(t, &slowOn{name: "lento"})
+	start := time.Now()
+	e, _ := r.Run(context.Background(), Plan{Action: "x", Target: "pruebas", Timeout: 50 * time.Millisecond,
+		Commands: []executor.Command{cmd("rapido")},
+		Then:     func([]executor.Result) ([]executor.Command, error) { return []executor.Command{cmd("lento")}, nil }})
+	if e.OK || !strings.Contains(e.Message, "tiempo límite") || time.Since(start) > 2*time.Second {
+		t.Fatalf("entry = %+v after %v", e, time.Since(start))
+	}
+	if len(e.Steps) != 2 || e.Steps[1].Cmd != "lento" {
+		t.Fatalf("the timeout must stop the command from Then: %+v", e.Steps)
+	}
+}
