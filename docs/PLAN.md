@@ -130,6 +130,8 @@ consola/
 
 - Flujo: se trabaja en la rama propia → al terminar una fase verificada, se sube a `dev` para revisión → `dev` pasa a `main` en los hitos (base del lunes 19, integración del jueves 22, entrega).
 - Antes de empezar cada fase, cada quien actualiza su rama con lo último de `dev`.
+- Cada integrante prueba contra **su propia VM** en su VirtualBox (procedimiento C1 del plan de la Parte C). La sustentación y los videos se hacen en un solo equipo.
+- Las contraseñas de las VMs van en `keys/guest-pass` (permisos 600), nunca en la terminal, en `config.json` ni en el chat de la IA (ver la guía de la base).
 - Mensajes de commit convencionales (`feat:`, `fix:`, `docs:`).
 - Una fase está **terminada** solo cuando su criterio de verificación pasa contra la VM real y hay commit.
 - `logs/`, `keys/` y cualquier llave privada van en `.gitignore`.
