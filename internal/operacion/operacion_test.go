@@ -261,3 +261,17 @@ func TestAlsoOKDoesNotHideChannelErrors(t *testing.T) {
 		t.Fatal("a channel error is a failure even if its exit code is in AlsoOK")
 	}
 }
+
+func TestChannelErrorMessageReachesTheUser(t *testing.T) {
+	f := &executor.Fake{RunFunc: func(executor.Command) (executor.Result, error) {
+		return executor.Result{ExitCode: -1}, &executor.ChannelError{Msg: "La VM «consola-pruebas» está apagada; enciéndela en VirtualBox y vuelve a intentarlo", Err: errors.New("VBoxManage: error: not currently running")}
+	}}
+	r, _ := setup(t, f)
+	e, _ := r.Run(context.Background(), Plan{Action: "x", Target: "pruebas", Commands: []executor.Command{cmd("hostname")}})
+	if !strings.HasPrefix(e.Message, "La VM «consola-pruebas» está apagada") {
+		t.Fatalf("Message = %q: the channel's own explanation must reach the user", e.Message)
+	}
+	if !strings.Contains(e.Steps[0].Error, "not currently running") {
+		t.Fatalf("the technical detail must stay in the step: %q", e.Steps[0].Error)
+	}
+}

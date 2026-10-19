@@ -126,6 +126,10 @@ func failure(ctx context.Context, p Plan, step oplog.Step, err error, timeout ti
 			return msg
 		}
 	}
+	var ce *executor.ChannelError
+	if errors.As(err, &ce) { // the channel knows what went wrong: VM off, wrong password...
+		return ce.Msg + ". El detalle técnico está abajo."
+	}
 	if err != nil {
 		return "No se pudo comunicar con la VM para ejecutar «" + step.Cmd + "». Revisa que esté encendida y que el canal funcione; el detalle técnico está abajo."
 	}

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 )
 
@@ -23,6 +24,10 @@ type Target struct {
 	VM      string `json:"vm"`       // VirtualBox VM name, used by Guest Additions
 	IP      string `json:"ip"`       // address used once SSH is configured
 	SSHUser string `json:"ssh_user"` // user for SSH connections
+
+	// GuestUser is the guest user for Guest Additions; empty means root. Its password is
+	// read from keys/guest-pass-<name> or keys/guest-pass (mode 600), never from this file.
+	GuestUser string `json:"guest_user,omitempty"`
 }
 
 // Config is the content of config.json. Passwords are never stored here:
@@ -75,6 +80,9 @@ func (c *Config) Validate() error {
 		switch {
 		case t.Name == "":
 			return fmt.Errorf("target %d: name is required", i)
+		case !reTargetName.MatchString(t.Name):
+			// The name becomes part of file names (keys/guest-pass-<name>) and URLs.
+			return fmt.Errorf("target %q: name must use lowercase letters, digits and -", t.Name)
 		case t.VM == "":
 			return fmt.Errorf("target %q: vm is required", t.Name)
 		case net.ParseIP(t.IP) == nil:
@@ -86,6 +94,8 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+var reTargetName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // validateListen accepts only a literal loopback IP with an explicit port,
 // so the console is never reachable from the network.

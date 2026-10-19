@@ -68,6 +68,8 @@ func TestValidateTargets(t *testing.T) {
 		{"empty vm", []Target{{Name: "a", IP: "10.0.0.1"}}, "vm"},
 		{"invalid ip", []Target{{Name: "a", VM: "x", IP: "10.0.0"}}, "ip"},
 		{"duplicate name", []Target{validTarget(), dup}, "duplicate"},
+		{"path in name", []Target{{Name: "../otra", VM: "x", IP: "10.0.0.1"}}, "lowercase letters"},
+		{"spaces in name", []Target{{Name: "mi vm", VM: "x", IP: "10.0.0.1"}}, "lowercase letters"},
 	}
 	for _, c := range cases {
 		cfg := Config{Listen: DefaultListen, Targets: c.targets}
@@ -152,5 +154,17 @@ func TestLoadMissingFileExplainsWhatToDo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "config.example.json") {
 		t.Fatalf("error %q should tell the user to copy config.example.json", err)
+	}
+}
+
+func TestTargetAcceptsGuestUser(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"targets":[{"name":"a","vm":"x","ip":"10.0.0.1","guest_user":"admin"}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.Targets[0].GuestUser != "admin" {
+		t.Fatalf("Load = %+v, %v", cfg, err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -83,14 +84,47 @@ func newServer(addr string, h http.Handler) *http.Server {
 	}
 }
 
-// newState builds the runtime state. With simulate, every target gets a simulated channel
-// so the interface can be developed and demonstrated without a VM.
+// keysDir holds the console's private files (Guest Additions passwords, SSH keys).
+const keysDir = "keys"
+
+// newState builds the runtime state with the default keys directory.
 func newState(cfg app.Config, simulate bool) *app.State {
+	return newStateWithKeys(cfg, simulate, keysDir)
+}
+
+// newStateWithKeys builds the runtime state. With simulate, every target gets a simulated
+// channel so the interface can be developed and demonstrated without a VM. Otherwise each
+// target that has a Guest Additions password file starts with that channel.
+func newStateWithKeys(cfg app.Config, simulate bool, keys string) *app.State {
 	state := app.NewState(cfg)
-	if simulate {
-		for _, t := range cfg.Targets {
+	for _, t := range cfg.Targets {
+		if simulate {
 			_ = state.SetExecutor(t.Name, executor.NewSimulated(t.Name))
+			continue
+		}
+		if ex, file, ok := guestChannel(t, keys); ok {
+			_ = state.SetExecutor(t.Name, ex)
+			log.Printf("destino %s: canal Guest Additions con la contraseña de %s", t.Name, file)
 		}
 	}
 	return state
+}
+
+// guestChannel returns the Guest Additions channel of a target if its password file exists:
+// keys/guest-pass-<target> first, then keys/guest-pass for every target.
+func guestChannel(t app.Target, keys string) (executor.Executor, string, bool) {
+	user := t.GuestUser
+	if user == "" {
+		user = "root"
+	}
+	for _, f := range []string{filepath.Join(keys, "guest-pass-"+t.Name), filepath.Join(keys, "guest-pass")} {
+		if _, err := os.Stat(f); err == nil {
+			abs, err := filepath.Abs(f) // VBoxManage expects an absolute path
+			if err != nil {
+				return nil, "", false
+			}
+			return &executor.GuestControl{VM: t.VM, User: user, PasswordFile: abs}, f, true
+		}
+	}
+	return nil, "", false
 }

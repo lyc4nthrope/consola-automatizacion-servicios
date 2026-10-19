@@ -54,6 +54,23 @@ func (c Command) String() string {
 	return strings.Join(parts, " ")
 }
 
+// ChannelError means the command could not be delivered to the VM (VM off, wrong
+// credentials, channel not ready...). Msg is written for the user; Err keeps the
+// technical detail for the operation log.
+type ChannelError struct {
+	Msg string
+	Err error
+}
+
+func (e *ChannelError) Error() string {
+	if e.Err == nil {
+		return e.Msg
+	}
+	return e.Msg + ": " + e.Err.Error()
+}
+
+func (e *ChannelError) Unwrap() error { return e.Err }
+
 // Result is the outcome of a command.
 type Result struct {
 	Cmd      string // full command, for the log
