@@ -79,13 +79,19 @@
   </form>
 </section>
 
-<section class="block" aria-labelledby="pendientes-titulo">
-  <h2 id="pendientes-titulo" class="block-title">Próximamente</h2>
-  <ul class="actions">
-    <li class="action">
-      <span>Nombre de host y /etc/hosts</span>
-      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
-    </li>
-  </ul>
+<section class="block" aria-labelledby="hostname-titulo">
+  <h2 id="hostname-titulo" class="block-title">Nombre de host y /etc/hosts</h2>
+  <form class="panel-c form-c" method="post" action="/preparacion/hostname" data-operacion="Cambiar nombre de host" novalidate>
+    {{if eq .Data.Formulario "hostname"}}{{template "resumen-errores" .Form}}{{end}}
+    <label class="form-label" for="hostname">Nombre nuevo</label>
+    <input class="form-control mono" id="hostname" name="hostname" type="text" value="{{index .Form.Values "hostname"}}"
+      maxlength="63" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "hostname" "hostname-ayuda"}}>
+    {{template "error-campo" (campo .Form "hostname")}}
+    <p class="field-hint" id="hostname-ayuda">Minúsculas, números y guiones, por ejemplo <span class="mono" translate="no">servidor1</span>. La consola cambia el nombre con <span class="mono">hostnamectl</span> y la línea <span class="mono">127.0.1.1</span> de <span class="mono">/etc/hosts</span>, sin tocar las demás; guarda el archivo original la primera vez.</p>
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-pc-display" aria-hidden="true"></i> Cambiar nombre</button>
+    </div>
+  </form>
 </section>
 {{end}}

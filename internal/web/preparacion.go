@@ -24,6 +24,7 @@ func init() {
 		r.HandleFunc("POST /preparacion/issue", s.instalarIssue)
 		r.HandleFunc("POST /preparacion/issue/vista-previa", s.vistaPreviaIssue)
 		r.HandleFunc("POST /preparacion/issue/restaurar", s.restaurarIssue)
+		r.HandleFunc("POST /preparacion/hostname", s.cambiarHostname)
 	})
 }
 
@@ -34,7 +35,7 @@ var channelPackages = []string{"openssh-server", "openssh-sftp-server"}
 // preparacionData is the page data. The page has several forms and one Form value, so
 // Formulario says which form the values and errors belong to.
 type preparacionData struct {
-	Formulario string        // "paquete" or "issue"
+	Formulario string        // "paquete", "issue" or "hostname"
 	Issue      *issuePreview // set after "Vista previa"
 	Datos      []issueDato
 }

@@ -41,25 +41,35 @@ const issueFile = "/etc/issue"
 // Fixed scripts; the file content and path are positional parameters, never part of a
 // script.
 const (
-	// writeIssueScript writes "$1" to the file "$2", replacing it atomically (temporary
-	// file + mv), readable by everyone. Before the first change it keeps the VM's message
-	// as the original (an empty one if the VM had none). Debian's /etc/issue is a regular
-	// file; a symlink would be replaced by a file.
-	writeIssueScript = `set -e; umask 022
-trap 'rm -f "$2.consola-nuevo"' EXIT
+	// writeFileScript (used for every file the console writes on the VM) writes "$1" to
+	// the file "$2", replacing it atomically (a temporary file of its own + mv), mode 644.
+	// With "$3", the SHA-256 of the content the console read, it first checks that the
+	// file still has exactly that content and exits 12 otherwise, so an incomplete read or
+	// another change made meanwhile is never overwritten. Before the first change it keeps
+	// the VM's file as the original (an empty one if there was none). Debian's /etc/issue
+	// and /etc/hosts are regular files; a symlink would be replaced by a file.
+	writeFileScript = `set -e; umask 022
+if [ -n "$3" ]; then
+  c=$(sha256sum < "$2") || exit 12
+  [ "${c%% *}" = "$3" ] || exit 12
+fi
 if [ ! -e "$2.consola-original" ]; then
   if [ -e "$2" ]; then cp -p "$2" "$2.consola-original"; else : > "$2.consola-original"; fi
 fi
-printf '%s' "$1" > "$2.consola-nuevo"
-mv "$2.consola-nuevo" "$2"`
+t=$(mktemp "$2.consola-XXXXXX")
+trap 'rm -f "$t"' EXIT
+printf '%s' "$1" > "$t"
+chmod 644 "$t"
+mv "$t" "$2"`
 
-	// restoreIssueScript puts the original of the file "$1" back atomically and forgets
+	// restoreFileScript puts the original of the file "$1" back atomically and forgets
 	// it, so a later change keeps whatever the VM has then; 10 = no saved original.
-	restoreIssueScript = `set -e
+	restoreFileScript = `set -e
 [ -e "$1.consola-original" ] || exit 10
-trap 'rm -f "$1.consola-nuevo"' EXIT
-cp -p "$1.consola-original" "$1.consola-nuevo"
-mv "$1.consola-nuevo" "$1"
+t=$(mktemp "$1.consola-XXXXXX")
+trap 'rm -f "$t"' EXIT
+cp -p "$1.consola-original" "$t"
+mv "$t" "$1"
 rm -f "$1.consola-original"`
 
 	// showIssueScript prints the message exactly as agetty shows it. agetty needs a
@@ -188,7 +198,7 @@ func planIssue(target, content string) operacion.Plan {
 	return operacion.Plan{
 		Action:   "Cambiar mensaje de entrada",
 		Target:   target,
-		Commands: []executor.Command{{Name: "sh", Args: []string{"-c", writeIssueScript, "sh", content, issueFile}}, reloadAgetty, showIssue},
+		Commands: []executor.Command{{Name: "sh", Args: []string{"-c", writeFileScript, "sh", content, issueFile}}, reloadAgetty, showIssue},
 		Success: func([]executor.Result) string {
 			return "La VM ya muestra el nuevo mensaje de entrada; abajo está tal como se ve en su consola. Su mensaje original está guardado en /etc/issue.consola-original, y «Restaurar el mensaje original» lo devuelve."
 		},
@@ -196,7 +206,7 @@ func planIssue(target, content string) operacion.Plan {
 }
 
 func planRestaurarIssue(target string) operacion.Plan {
-	restore := executor.Command{Name: "sh", Args: []string{"-c", restoreIssueScript, "sh", issueFile}}
+	restore := executor.Command{Name: "sh", Args: []string{"-c", restoreFileScript, "sh", issueFile}}
 	return operacion.Plan{
 		Action:   "Restaurar mensaje de entrada",
 		Target:   target,

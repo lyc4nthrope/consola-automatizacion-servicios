@@ -112,7 +112,7 @@ func TestExampleValues(t *testing.T) {
 func TestPlanIssueCommands(t *testing.T) {
 	p := planIssue("pruebas", "Hola\n\n")
 	want := []executor.Command{
-		{Name: "sh", Args: []string{"-c", writeIssueScript, "sh", "Hola\n\n", "/etc/issue"}},
+		{Name: "sh", Args: []string{"-c", writeFileScript, "sh", "Hola\n\n", "/etc/issue"}},
 		{Name: "agetty", Args: []string{"--reload"}},
 		{Name: "sh", Args: []string{"-c", showIssueScript}},
 	}
@@ -125,7 +125,7 @@ func TestPlanIssueCommands(t *testing.T) {
 
 	r := planRestaurarIssue("pruebas")
 	if r.Action != "Restaurar mensaje de entrada" || !slices.EqualFunc(r.Commands[1:], want[1:], sameCommand) ||
-		!sameCommand(r.Commands[0], executor.Command{Name: "sh", Args: []string{"-c", restoreIssueScript, "sh", "/etc/issue"}}) {
+		!sameCommand(r.Commands[0], executor.Command{Name: "sh", Args: []string{"-c", restoreFileScript, "sh", "/etc/issue"}}) {
 		t.Fatalf("restore plan = %+v", r)
 	}
 	if got := r.Explain(oplog.Step{Cmd: r.Commands[0].String(), ExitCode: noOriginalCode}); !strings.Contains(got, "No hay un mensaje original guardado") {
@@ -171,7 +171,7 @@ func TestIssueScriptsInARealShell(t *testing.T) {
 	defer syscall.Umask(old)
 
 	first := "Primera versión con ñ\n\\\\ y 'comillas' $(id)\n\n"
-	if code := runSh(t, writeIssueScript, first, issue); code != 0 {
+	if code := runSh(t, writeFileScript, first, issue); code != 0 {
 		t.Fatalf("write: exit %d", code)
 	}
 	if got := readFile(t, issue); got != first {
@@ -183,11 +183,11 @@ func TestIssueScriptsInARealShell(t *testing.T) {
 	if st, _ := os.Stat(issue); st.Mode().Perm() != 0o644 {
 		t.Fatalf("mode %v, want 0644", st.Mode().Perm())
 	}
-	if _, err := os.Stat(issue + ".consola-nuevo"); !os.IsNotExist(err) {
+	if leftovers(issue) {
 		t.Fatal("the temporary file must not stay behind")
 	}
 
-	if code := runSh(t, writeIssueScript, "Segunda\n\n", issue); code != 0 || readFile(t, issue) != "Segunda\n\n" {
+	if code := runSh(t, writeFileScript, "Segunda\n\n", issue); code != 0 || readFile(t, issue) != "Segunda\n\n" {
 		t.Fatalf("second write: exit %d, issue %q", code, readFile(t, issue))
 	}
 	if got := readFile(t, orig); got != "Debian \\n \\l\n\n" {
@@ -195,7 +195,7 @@ func TestIssueScriptsInARealShell(t *testing.T) {
 	}
 
 	_ = os.Chmod(issue, 0o600) // the original's mode comes back with it
-	if code := runSh(t, restoreIssueScript, issue); code != 0 || readFile(t, issue) != "Debian \\n \\l\n\n" {
+	if code := runSh(t, restoreFileScript, issue); code != 0 || readFile(t, issue) != "Debian \\n \\l\n\n" {
 		t.Fatalf("restore: exit %d, issue %q", code, readFile(t, issue))
 	}
 	if st, _ := os.Stat(issue); st.Mode().Perm() != 0o644 {
@@ -204,25 +204,25 @@ func TestIssueScriptsInARealShell(t *testing.T) {
 	if _, err := os.Stat(orig); !os.IsNotExist(err) {
 		t.Fatal("after restoring, the saved original must be forgotten")
 	}
-	if _, err := os.Stat(issue + ".consola-nuevo"); !os.IsNotExist(err) {
+	if leftovers(issue) {
 		t.Fatal("restore must not leave its temporary file")
 	}
 
 	// The admin edits the file by hand after a restore: the next change keeps that edit.
 	_ = os.WriteFile(issue, []byte("editado a mano\n"), 0o644)
-	if code := runSh(t, writeIssueScript, "Tercera\n\n", issue); code != 0 || readFile(t, orig) != "editado a mano\n" {
+	if code := runSh(t, writeFileScript, "Tercera\n\n", issue); code != 0 || readFile(t, orig) != "editado a mano\n" {
 		t.Fatalf("after a restore, the next original must be the current file; got %q", readFile(t, orig))
 	}
 
 	// A VM with no /etc/issue: its original is "no message", so restoring leaves it empty.
 	bare := filepath.Join(t.TempDir(), "issue")
-	if code := runSh(t, writeIssueScript, "Nuevo\n\n", bare); code != 0 || readFile(t, bare) != "Nuevo\n\n" {
+	if code := runSh(t, writeFileScript, "Nuevo\n\n", bare); code != 0 || readFile(t, bare) != "Nuevo\n\n" {
 		t.Fatalf("write without an issue file: exit %d", code)
 	}
 	if got := readFile(t, bare+".consola-original"); got != "" {
 		t.Fatalf("original = %q, want an empty one", got)
 	}
-	if code := runSh(t, restoreIssueScript, bare); code != 0 || readFile(t, bare) != "" {
+	if code := runSh(t, restoreFileScript, bare); code != 0 || readFile(t, bare) != "" {
 		t.Fatalf("restore without an original file: exit %d, issue %q", code, readFile(t, bare))
 	}
 
@@ -232,16 +232,16 @@ func TestIssueScriptsInARealShell(t *testing.T) {
 	_ = os.WriteFile(full, []byte("actual\n"), 0o644)
 	_ = os.WriteFile(full+".consola-original", []byte("original\n"), 0o644)
 	const diskFull = "trap '' XFSZ; ulimit -f 0; "
-	if code := runSh(t, diskFull+writeIssueScript, "nuevo\n", full); code == 0 || readFile(t, full) != "actual\n" {
+	if code := runSh(t, diskFull+writeFileScript, "nuevo\n", full); code == 0 || readFile(t, full) != "actual\n" {
 		t.Fatalf("write on a full disk: exit %d, issue %q", code, readFile(t, full))
 	}
-	if _, err := os.Stat(full + ".consola-nuevo"); !os.IsNotExist(err) {
+	if leftovers(full) {
 		t.Fatal("a failed write must not leave its temporary file")
 	}
-	if code := runSh(t, diskFull+restoreIssueScript, full); code == 0 || readFile(t, full) != "actual\n" {
+	if code := runSh(t, diskFull+restoreFileScript, full); code == 0 || readFile(t, full) != "actual\n" {
 		t.Fatalf("restore on a full disk: exit %d, issue %q", code, readFile(t, full))
 	}
-	if _, err := os.Stat(full + ".consola-nuevo"); !os.IsNotExist(err) {
+	if leftovers(full) {
 		t.Fatal("a failed restore must not leave its temporary file")
 	}
 	if got := readFile(t, full+".consola-original"); got != "original\n" {
@@ -251,7 +251,7 @@ func TestIssueScriptsInARealShell(t *testing.T) {
 	// Restoring when the console never changed the message.
 	never := filepath.Join(t.TempDir(), "issue")
 	_ = os.WriteFile(never, []byte("propio\n"), 0o644)
-	if code := runSh(t, restoreIssueScript, never); code != noOriginalCode || readFile(t, never) != "propio\n" {
+	if code := runSh(t, restoreFileScript, never); code != noOriginalCode || readFile(t, never) != "propio\n" {
 		t.Fatalf("restore without original: exit %d, issue %q", code, readFile(t, never))
 	}
 }
@@ -407,4 +407,15 @@ func TestIssueFormKeepsALeadingBlankLine(t *testing.T) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
+}
+
+// leftovers reports a temporary file left next to p (anything but the saved original).
+func leftovers(p string) bool {
+	entries, _ := filepath.Glob(p + ".consola-*")
+	for _, e := range entries {
+		if e != p+".consola-original" {
+			return true
+		}
+	}
+	return false
 }
