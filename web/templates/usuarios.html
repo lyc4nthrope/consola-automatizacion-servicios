@@ -1,0 +1,38 @@
+{{define "content"}}
+<header class="page-head">
+  <p class="eyebrow"><i class="bi {{.Module.Icon}}" aria-hidden="true"></i> Módulo</p>
+  <h1>{{.Module.Title}}</h1>
+  <p class="lead-c">{{.Module.Summary}}</p>
+</header>
+
+<section class="block" aria-labelledby="conectar-titulo">
+  <h2 id="conectar-titulo" class="block-title">Conectar por SSH</h2>
+  <p class="field-hint">La consola añade su propia llave a <span class="mono" translate="no">/root/.ssh/authorized_keys</span> de la VM usando el canal que ya tiene (ahora: <span class="mono">{{.Data.Canal}}</span>), guarda el archivo original la primera vez y comprueba que la sesión SSH de root responde. Si la prueba pasa, la barra superior muestra SSH y todas las operaciones siguientes van por ahí.</p>
+  <form class="panel-c form-c" method="post" action="/usuarios/conectar-ssh" data-operacion="Conectar por SSH" novalidate>
+    {{template "resumen-errores" .Form}}
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Conectar por SSH</button>
+    </div>
+  </form>
+</section>
+
+<section class="block" aria-labelledby="crear-titulo">
+  <h2 id="crear-titulo" class="block-title">Crear usuario</h2>
+  <ul class="actions">
+    <li class="action">
+      <span>Crear la cuenta, su sudo y su llave de acceso</span>
+      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
+    </li>
+  </ul>
+</section>
+
+<section class="block" aria-labelledby="eliminar-titulo">
+  <h2 id="eliminar-titulo" class="block-title">Eliminar usuario</h2>
+  <ul class="actions">
+    <li class="action">
+      <span>Eliminar una cuenta con su sudo y sus llaves</span>
+      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
+    </li>
+  </ul>
+</section>
+{{end}}
