@@ -222,6 +222,7 @@ type canalLlavesFalso struct {
 	executor.Fake
 	subidas map[string]string // ruta remota -> contenido que recibió (CopyTo)
 	nuevos  []string          // comandos fuera del repertorio (debe quedar vacío)
+	codigoGetent int          // exit code de getent en el flujo crear (2 = libre)
 }
 
 func canalLlavesDePrueba(t *testing.T) *canalLlavesFalso {
@@ -270,6 +271,43 @@ func (c *canalLlavesFalso) CopyTo(ctx context.Context, localPath, remotePath str
 	}
 	c.subidas[remotePath] = string(data)
 	return c.Fake.CopyTo(ctx, localPath, remotePath)
+}
+
+// canalCrearDePrueba is the SSH test channel for B4's crear flow: the same
+// copy mechanics (the .pub and the private key "arrive" from the VM) with the
+// account commands in its repertoire. codigoGetent decides what the precheck
+// reports (2 = the name is free, 0 = it exists).
+func canalCrearDePrueba(t *testing.T, codigoGetent int) *canalLlavesFalso {
+	t.Helper()
+	canal := canalLlavesDePrueba(t)
+	canal.codigoGetent = codigoGetent
+	canal.RunFunc = func(c executor.Command) (executor.Result, error) {
+		switch {
+		case c.String() == "hostname":
+			return executor.Result{Stdout: "servidor1\n"}, nil
+		case c.String() == "mktemp -d":
+			return executor.Result{Stdout: "/tmp/consola.llaves-XXXXXX\n"}, nil
+		case c.Name == "getent":
+			return executor.Result{ExitCode: canal.codigoGetent}, nil
+		case c.Name == "useradd", c.Name == "chpasswd", c.Name == "usermod":
+			return executor.Result{}, nil
+		case c.Name == "ssh-keygen", c.Name == "systemctl", c.Name == "install", c.Name == "rm", c.Name == "chown":
+			return executor.Result{}, nil
+		case c.Name == "sh" && len(c.Args) > 1:
+			switch c.Args[1] {
+			case leerLlavesScript:
+				return executor.Result{Stdout: "ssh-ed25519 AAAAEXISTENTE root@repo-vm\n"}, nil
+			case instalarLlavesScript, sshdPruebaScript, dropInVerificadoScript:
+				return executor.Result{}, nil
+			}
+		}
+		if len(c.Args) > 1 && (strings.HasPrefix(c.Args[1], "v=$(sshd -T -C user=") || strings.Contains(c.Args[1], "passwordauthentication")) {
+			return executor.Result{}, nil
+		}
+		canal.nuevos = append(canal.nuevos, c.String())
+		return executor.Result{}, nil
+	}
+	return canal
 }
 
 // El flujo completo: genera el par en la VM con ssh-keygen, instala la pública
@@ -609,5 +647,258 @@ func TestPaginaListoDetalleSoloConIdReal(t *testing.T) {
 	}
 	if entendida := serve(t, h, httptest.NewRequest("GET", "/usuarios/llaves/listo/"+token+"?id=0123456789abcdef", nil)); entendida.Code == http.StatusOK && strings.Contains(body(entendida), "/resultado/0123456789abcdef") {
 		t.Errorf("un id que no está en el log no debe enlazarse")
+	}
+}
+
+// ---- crear usuario (B4) ----
+
+// repertorioLlaveDeUsuario lists the exact commands the user-key story sends:
+// its root counterpart with the account's names and paths.
+func repertorioLlaveDeUsuario(dirLlaves, merge string) []executor.Command {
+	temporal := "/tmp/consola.llaves-XXXXXX"
+	dropIn := "/tmp/20-consola-daniel.conf"
+	return []executor.Command{
+		{Name: "hostname"},
+		{Name: "mktemp", Args: []string{"-d"}},
+		{Name: "ssh-keygen", Args: []string{"-t", "ed25519", "-N", "", "-C", "daniel@servidor1", "-f", temporal + "/id_ed25519"}},
+		{Name: "sh", Args: []string{"-c", leerLlavesScript, "sh", dirLlaves}},
+		{Name: "sh", Args: []string{"-c", instalarLlavesScript, "sh", dirLlaves, merge, sha256Hex("ssh-ed25519 AAAAEXISTENTE root@repo-vm\n")}},
+		{Name: "chown", Args: []string{"-f", "daniel:daniel", "--", "/home/daniel/.ssh", dirLlaves}},
+		{Name: "install", Args: []string{"-m", "644", "-o", "root", "-g", "root", "--", dropIn, "/etc/ssh/sshd_config.d/20-consola-daniel.conf"}},
+		{Name: "sh", Args: []string{"-c", sshdPruebaScript, "sh", "/etc/ssh/sshd_config.d/20-consola-daniel.conf"}},
+		{Name: "systemctl", Args: []string{"reload", "ssh"}},
+		{Name: "sh", Args: []string{"-c", fmt.Sprintf(dropInVerificadoScriptFmt, "daniel")}},
+		{Name: "rm", Args: []string{"-rf", "--", temporal}},
+		{Name: "rm", Args: []string{"-f", "--", dropIn}},
+	}
+}
+
+// The four checkbox combinations send exactly their repertoire: creating the
+// account always goes (getent + useradd + chpasswd with the password only in
+// Stdin), the sudo box adds usermod, and the llave checkbox launches the same
+// guarded key story as B3, only with the account's folder, owner and drop-in,
+// landing on the same one-time download page.
+func TestCrearLas4CombinacionesDeCasillas(t *testing.T) {
+	const (
+		usuario    = "daniel"
+		contrasena = "ClaveSegura-2026"
+	)
+	dirLlaves := "/home/daniel/.ssh/authorized_keys"
+	pubDePrueba := strings.TrimSpace(pubDeRootPrueba)
+	merge := llaves.MergeAuthorizedKeys("ssh-ed25519 AAAAEXISTENTE root@repo-vm\n", pubDePrueba)
+
+	base := []executor.Command{
+		{Name: "getent", Args: []string{"passwd", usuario}},
+		{Name: "useradd", Args: []string{"-m", "-s", "/bin/bash", "--", usuario}},
+		{Name: "chpasswd", Stdin: usuario + ":" + contrasena},
+	}
+	conSudo := append(append([]executor.Command{}, base...),
+		executor.Command{Name: "usermod", Args: []string{"-aG", "sudo", "--", usuario}})
+	casos := []struct {
+		nombre string
+		sudo   bool
+		llave  bool
+		want   []executor.Command
+	}{
+		{"sin casillas", false, false, base},
+		{"solo sudo", true, false, conSudo},
+		{"solo llave", false, true, append(append([]executor.Command{}, base...), repertorioLlaveDeUsuario(dirLlaves, merge)...)},
+		{"todo", true, true, append(conSudo, repertorioLlaveDeUsuario(dirLlaves, merge)...)},
+	}
+	for _, caso := range casos {
+		t.Run(caso.nombre, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			estado := newTestState()
+			canal := canalCrearDePrueba(t, 2)
+			_ = estado.SetExecutor("pruebas", canal)
+			h, _ := newTestHandlerWithLog(t, estado)
+
+			forma := url.Values{"usuario": {usuario}, "contrasena": {contrasena}}
+			if caso.sudo {
+				forma.Set("sudo", "on")
+			}
+			if caso.llave {
+				forma.Set("llave", "on")
+			}
+			rec := serve(t, h, postForm("/usuarios/crear", forma))
+			if rec.Code != http.StatusSeeOther {
+				t.Fatalf("POST /usuarios/crear = %d, want 303 (%s)", rec.Code, rec.Body.String())
+			}
+			destino := rec.Header().Get("Location")
+
+			llamadas := canal.Calls()
+			if len(llamadas) != len(caso.want) {
+				t.Fatalf("el flujo envió %d comandos, want %d; inesperados: %v", len(llamadas), len(caso.want), canal.nuevos)
+			}
+			for i, real := range llamadas {
+				if real.String() != caso.want[i].String() {
+					t.Errorf("el comando %d fue %q, want %q", i, real.String(), caso.want[i].String())
+				}
+				if strings.Contains(real.String(), contrasena) {
+					t.Errorf("la contraseña aparece en la línea del comando %d: %s", i, real.String())
+				}
+			}
+			if len(canal.nuevos) != 0 {
+				t.Errorf("comandos fuera del repertorio: %v", canal.nuevos)
+			}
+
+			if caso.llave {
+				u, err := url.Parse(destino)
+				if err != nil || !strings.HasPrefix(destino, "/usuarios/llaves/listo/") {
+					t.Fatalf("Location %q, want /usuarios/llaves/listo/<token>?id=…", destino)
+				}
+				token := strings.TrimPrefix(u.Path, "/usuarios/llaves/listo/")
+				if len(token) != 32 {
+					t.Errorf("el token %q no mide 32 caracteres", token)
+				}
+				if _, ok := u.Query()["id"]; !ok {
+					t.Errorf("el redirect no trae ?id= (el detalle técnico): %q", destino)
+				}
+				copias := canal.Copies()
+				if len(copias) != 3 {
+					t.Fatalf("%s: el canal recibió %d copias, want 3 (pub, drop-in, privada): %v", caso.nombre, len(copias), copias)
+				}
+				if copias[0].ToVM || copias[0].Remote != "/tmp/consola.llaves-XXXXXX/id_ed25519.pub" {
+					t.Errorf("%s: la primera copia no trajo la .pub: %v", caso.nombre, copias[0])
+				}
+				if !copias[1].ToVM || copias[1].Remote != "/tmp/20-consola-daniel.conf" {
+					t.Errorf("%s: la segunda copia no subió el drop-in del usuario: %v", caso.nombre, copias[1])
+				}
+				if got := canal.subidas["/tmp/20-consola-daniel.conf"]; got != llaves.ContenidoDropInUsuario(usuario) {
+					t.Errorf("%s: el drop-in subido fue %q, want %q", caso.nombre, got, llaves.ContenidoDropInUsuario(usuario))
+				}
+				if copias[2].ToVM || copias[2].Remote != "/tmp/consola.llaves-XXXXXX/id_ed25519" {
+					t.Errorf("%s: la tercera copia no trajo la llave privada: %v", caso.nombre, copias[2])
+				}
+				pagina := serve(t, h, httptest.NewRequest("GET", destino, nil))
+				if !strings.Contains(pagina.Body.String(), "/usuarios/llaves/"+token) {
+					t.Errorf("%s: la página de la llave no ofrece la descarga del token", caso.nombre)
+				}
+			} else if !strings.HasPrefix(destino, "/resultado/") {
+				t.Errorf("%s: Location %q, want /resultado/…", caso.nombre, destino)
+			}
+		})
+	}
+}
+
+// A getent that answers 0 ("the name is taken") stops before touching the
+// account: the form comes back 422 with the message next to the field and
+// useradd never runs.
+func TestCrearRechazaUsuarioExistente(t *testing.T) {
+	t.Chdir(t.TempDir())
+	estado := newTestState()
+	canal := canalCrearDePrueba(t, 0)
+	_ = estado.SetExecutor("pruebas", canal)
+	h, _ := newTestHandlerWithLog(t, estado)
+
+	rec := serve(t, h, postForm("/usuarios/crear", url.Values{
+		"usuario": {"daniel"}, "contrasena": {"ClaveSegura-2026"},
+	}))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST /usuarios/crear = %d, want 422", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Ya existe un usuario con ese nombre") {
+		t.Errorf("la página no explica por el campo: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `for="usuario"`) {
+		t.Errorf("el mensaje no está ligado al campo usuario")
+	}
+	llamadas := canal.Calls()
+	if len(llamadas) != 1 || llamadas[0].Name != "getent" {
+		t.Fatalf("el flujo llamó %v, want solo getent", llamadas)
+	}
+}
+
+// The local validation answers before touching the VM: invalid user name and
+// too-short password each render 422 with their field message and send zero
+// commands.
+func TestCrearValidaLocalmente(t *testing.T) {
+	t.Chdir(t.TempDir())
+	estado := newTestState()
+	canal := canalCrearDePrueba(t, 2)
+	_ = estado.SetExecutor("pruebas", canal)
+	h, _ := newTestHandlerWithLog(t, estado)
+
+	rec := serve(t, h, postForm("/usuarios/crear", url.Values{
+		"usuario": {"Root-!"}, "contrasena": {"ClaveSegura-2026"},
+	}))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST con nombre invalido = %d, want 422", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "El nombre de usuario empieza con una minúscula") {
+		t.Errorf("la página no muestra el mensaje del nombre: %s", rec.Body.String())
+	}
+	if lleno := canal.Calls(); len(lleno) != 0 {
+		t.Errorf("la validación local no debió tocar la VM: %v", lleno)
+	}
+	rec = serve(t, h, postForm("/usuarios/crear", url.Values{
+		"usuario": {"daniel"}, "contrasena": {"corta"},
+	}))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST con contraseña corta = %d, want 422", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "entre 8 y 128 caracteres") {
+		t.Errorf("la página no muestra el mensaje de la contraseña: %s", rec.Body.String())
+	}
+}
+
+// The password travels only in chpasswd's Stdin: it does not appear in any
+// command line and not in one byte of the operation log directory (DB12).
+func TestCrearLaContraseñaViajaSoloEnStdin(t *testing.T) {
+	t.Chdir(t.TempDir())
+	estado := newTestState()
+	canal := canalCrearDePrueba(t, 2)
+	_ = estado.SetExecutor("pruebas", canal)
+	const contrasena = "ClaveSegura-2026"
+
+	dirLog := t.TempDir()
+	log, err := oplog.Open(dirLog)
+	if err != nil {
+		t.Fatalf("oplog.Open: %v", err)
+	}
+	defer log.Close()
+	h, err := NewHandler(Deps{Static: assets.Static, Templates: assets.Templates, State: estado, Log: log, Listen: testListen})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	rec := serve(t, h, postForm("/usuarios/crear", url.Values{
+		"usuario": {"daniel"}, "contrasena": {contrasena}, "sudo": {"on"},
+	}))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST /usuarios/crear = %d, want 303", rec.Code)
+	}
+	for i, c := range canal.Calls() {
+		if strings.Contains(c.String(), contrasena) {
+			t.Errorf("la contraseña aparece en la línea del comando %d: %s", i, c.String())
+		}
+		if c.Name == "chpasswd" && c.Stdin != "daniel:"+contrasena {
+			t.Errorf("chpasswd.Stdin = %q", c.Stdin)
+		}
+	}
+
+	var archivos []string
+	if err := filepath.WalkDir(dirLog, func(punto string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			archivos = append(archivos, punto)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("recorriendo el registro: %v", err)
+	}
+	if len(archivos) == 0 {
+		t.Fatalf("el registro no dejó archivos en %s", dirLog)
+	}
+	for _, punto := range archivos {
+		data, err := os.ReadFile(punto)
+		if err != nil {
+			t.Fatalf("leyendo %s: %v", punto, err)
+		}
+		if strings.Contains(string(data), contrasena) {
+			t.Errorf("la contraseña quedó en %s", punto)
+		}
 	}
 }
