@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/app"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/executor"
@@ -241,5 +242,117 @@ func TestProveSSHUsaHostnameYExigeSalida(t *testing.T) {
 	}}
 	if err := ProveSSH(rechaza); err == nil || !strings.Contains(err.Error(), "conexión rechazada") {
 		t.Errorf("un rechazo de red debe llegar completo: err=%v", err)
+	}
+}
+
+func TestContenidoDropInRootExacto(t *testing.T) {
+	if got := NombreDropInRoot; got != "10-consola-root.conf" {
+		t.Errorf("NombreDropInRoot = %q, want 10-consola-root.conf", got)
+	}
+	want := "PermitRootLogin prohibit-password\n"
+	if got := ContenidoDropInRoot(); got != want {
+		t.Errorf("ContenidoDropInRoot() = %q, want %q", got, want)
+	}
+}
+
+func TestNuevoTokenDescargaEsHexDe128Bits(t *testing.T) {
+	primero, err := NewDownloadToken()
+	if err != nil {
+		t.Fatalf("NewDownloadToken: %v", err)
+	}
+	if len(primero) != 32 {
+		t.Errorf("el token %q mide %d, want 32 carácteres hex", primero, len(primero))
+	}
+	for _, letra := range primero {
+		if !strings.ContainsRune("0123456789abcdef", letra) {
+			t.Fatalf("el token %q tiene caracteres fuera de 0-9a-f", primero)
+		}
+	}
+	segundo, err := NewDownloadToken()
+	if err != nil {
+		t.Fatalf("NewDownloadToken dos veces: %v", err)
+	}
+	if segundo == primero {
+		t.Errorf("dos tokens deben ser distintos: %q == %q", primero, segundo)
+	}
+}
+
+func TestDownloadDirYPath(t *testing.T) {
+	if got := DownloadDir(); got != filepath.Join("keys", "descargas") {
+		t.Errorf("DownloadDir() = %q, want %q", got, filepath.Join("keys", "descargas"))
+	}
+	bueno := strings.Repeat("a", 32)
+	want := filepath.Join("keys", "descargas", bueno)
+	got, err := DownloadPath(bueno)
+	if err != nil || got != want {
+		t.Errorf("DownloadPath(%q) = %q, %v; want %q sin error", bueno, got, err, want)
+	}
+	for _, mal := range []string{
+		"", "abc", strings.Repeat("A", 32), strings.Repeat("0", 31), strings.Repeat("0", 33),
+		strings.Repeat("0", 32) + "\n", "../../llave", "keys/descargas",
+	} {
+		if got, err := DownloadPath(mal); err == nil || got != "" {
+			t.Errorf("DownloadPath(%q)=%q (err=%v); debe ser rechazado (path vacío y error)", mal, got, err)
+		}
+	}
+}
+
+func TestPrepareDownloadPreparaYReadDeleteDownloadEntregaUnaVez(t *testing.T) {
+	t.Chdir(t.TempDir())
+	token, err := NewDownloadToken()
+	if err != nil {
+		t.Fatalf("NewDownloadToken: %v", err)
+	}
+	ruta, err := PrepareDownload(token)
+	if err != nil {
+		t.Fatalf("PrepareDownload: %v", err)
+	}
+	if ruta != filepath.Join("keys", "descargas", token) {
+		t.Errorf("la descarga vive en %q, want keys/descargas/%s", ruta, token)
+	}
+	privada := "-----BEGIN OPENSSH PRIVATE KEY-----\nllave nueva\n-----END OPENSSH PRIVATE KEY-----\n"
+	if err := os.WriteFile(ruta, []byte(privada), 0o600); err != nil {
+		t.Fatalf("WriteFile de prueba: %v", err)
+	}
+	datos, err := ReadDeleteDownload(token)
+	if err != nil || string(datos) != privada {
+		t.Fatalf("la primera lectura del token=%q: datos=%q, err=%v", token, datos, err)
+	}
+	if _, err := ReadDeleteDownload(token); err == nil || !strings.Contains(err.Error(), "no está disponible") {
+		t.Errorf("la segunda descarga debe fallar con 'no está disponible' (err=%v)", err)
+	}
+	if _, err := os.Stat(ruta); !os.IsNotExist(err) {
+		t.Errorf("después de descargar, la llave debe estar borrada; stat err=%v", err)
+	}
+}
+
+func TestReadDeleteDownloadRechazaTokenFalso(t *testing.T) {
+	if _, err := ReadDeleteDownload("token-falso"); err == nil {
+		t.Errorf("un token falso debe rechazarse")
+	}
+}
+
+func TestReadDeleteDownloadCaduca(t *testing.T) {
+	t.Chdir(t.TempDir())
+	token, err := NewDownloadToken()
+	if err != nil {
+		t.Fatalf("NewDownloadToken: %v", err)
+	}
+	ruta, err := PrepareDownload(token)
+	if err != nil {
+		t.Fatalf("PrepareDownload: %v", err)
+	}
+	if err := os.WriteFile(ruta, []byte("llave"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	viejo := time.Now().Add(-16 * time.Minute)
+	if err := os.Chtimes(ruta, viejo, viejo); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	if _, err := ReadDeleteDownload(token); err == nil || !strings.Contains(err.Error(), "caducó") {
+		t.Errorf("una descarga vieja debe caducar con el mensaje 'caducó' (err=%v)", err)
+	}
+	if _, err := os.Stat(ruta); !os.IsNotExist(err) {
+		t.Errorf("la descarga caducada se debe borrar; stat err=%v", err)
 	}
 }
