@@ -1,0 +1,20 @@
+{{define "content"}}
+<header class="page-head">
+  <p class="eyebrow"><i class="bi bi-key-fill" aria-hidden="true"></i> Llaves de root</p>
+  <h1>Tu llave está lista</h1>
+  <p class="lead-c">La VM generó el par de llaves de root y esta consola queda instalada (la pública) con el sshd armado. La mitad privada se copió a esta consola y solo se puede descargar una vez.</p>
+</header>
+
+<section class="block" aria-labelledby="descargar-titulo">
+  <h2 class="block-title" id="descargar-titulo">Descarga la llave privada</h2>
+  <div class="panel-c form-c">
+    <div class="form-actions">
+      <a class="btn btn-accent" href="/usuarios/llaves/{{.Data.Token}}" download="id_ed25519"><i class="bi bi-key" aria-hidden="true"></i> Descargar llave privada</a>
+      {{- with .Data.Detalle}}
+      <a class="btn btn-outline-accent" href="/resultado/{{.}}"><i class="bi bi-list-check" aria-hidden="true"></i> Detalle de la operación</a>
+      {{- end}}
+    </div>
+    <p class="field-hint">Guarda la llave en <span class="mono" translate="no">~/.ssh/</span> con permisos 600 (<span class="mono">chmod 600 archivo</span>). No la compartas ni la subas a un repositorio. Ponle una frase de seguridad con <span class="mono">ssh-keygen -p -f archivo</span> antes de usarla fuera de este equipo. Esta descarga funciona una sola vez.</p>
+  </div>
+</section>
+{{end}}

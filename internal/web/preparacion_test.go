@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/executor"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/oplog"
@@ -408,7 +410,9 @@ func TestPreparacionPageOffersBothActions(t *testing.T) {
 
 func TestRootKeysPartialAppearsOnlyWhenPartBAddsIt(t *testing.T) {
 	const placeholder = "Generar y autorizar las llaves de root"
-	b := body(serve(t, mustHandlerWith(t, templatesWith(t, nil)), httptestGet("/preparacion")))
+	// Since Part B's partial is a real file now (it always rides the embed),
+	// this "not yet added" phase removes it from the test FS explicitly.
+	b := body(serve(t, mustHandlerWith(t, templatesWithoutLlavesRoot(t)), httptestGet("/preparacion")))
 	if !strings.Contains(b, placeholder) {
 		t.Fatal("without Part B's partial the page must show the placeholder")
 	}
@@ -421,6 +425,18 @@ func TestRootKeysPartialAppearsOnlyWhenPartBAddsIt(t *testing.T) {
 	if strings.Contains(b, placeholder) {
 		t.Fatal("the placeholder must disappear once Part B's partial exists")
 	}
+}
+
+// templatesWithoutLlavesRoot returns the real templates minus Part B's
+// llaves-root partial, for the "Part B has not added it yet" phase above.
+func templatesWithoutLlavesRoot(t *testing.T) fs.FS {
+	t.Helper()
+	mapping, ok := templatesWith(t, nil).(fstest.MapFS)
+	if !ok {
+		t.Fatal("templatesWith must yield an fstest.MapFS")
+	}
+	delete(mapping, "templates/_llaves-root.html")
+	return mapping
 }
 
 func TestBrokenOptionalPartialFailsThePageNotTheConsole(t *testing.T) {
