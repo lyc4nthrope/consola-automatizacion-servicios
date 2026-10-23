@@ -41,13 +41,13 @@ func TestPlanRevisar(t *testing.T) {
 // commands the B4 phase spec demands.
 func TestPlanCrear4Combinaciones(t *testing.T) {
 	const (
-		contrasena   = "ClaveMuy-2026"
-		usuario      = "daniel"
-		target       = "pruebas"
+		contrasena = "ClaveMuy-2026"
+		usuario    = "daniel"
+		target     = "pruebas"
 	)
 	pruebas := []struct {
-		nombre  string
-		sudo    bool
+		nombre   string
+		sudo     bool
 		completo bool
 	}{
 		{"sin sudo ni llave", false, false},
@@ -117,3 +117,80 @@ func equalInts(ganadas, want []int) bool {
 var _ operacion.Plan
 var _ operacion.Plan = PlanRevisar("t", "u")
 var _ operacion.Plan = PlanCrear("t", "u", "p", false)
+var _ operacion.Plan = PlanEliminar("t", "u", false)
+
+// ParseUsuarioEntry parses a getent passwd line correctly.
+func TestParseUsuarioEntry(t *testing.T) {
+	line := "daniel:x:1000:1000:Daniel,,:/home/daniel:/bin/bash"
+	entry, ok := ParseUsuarioEntry(line)
+	if !ok {
+		t.Fatal("ParseUsuarioEntry returned false on valid line")
+	}
+	if entry.Name != "daniel" || entry.UID != 1000 || entry.GID != 1000 || entry.Home != "/home/daniel" || entry.Shell != "/bin/bash" {
+		t.Errorf("entry = %+v", entry)
+	}
+	// Invalid line
+	if _, ok := ParseUsuarioEntry("no:colon:here"); ok {
+		t.Error("ParseUsuarioEntry should reject invalid format")
+	}
+}
+
+// EsUsuarioEliminable filters per DB14: UID 1000-59999, not nobody, not protected.
+func TestEsUsuarioEliminable(t *testing.T) {
+	protegidos := map[string]bool{"root": true, "consola-ssh": true}
+	tests := []struct {
+		nombre string
+		entry  UsuarioEntry
+		ok     bool
+	}{
+		{"usuario normal UID 1000", UsuarioEntry{Name: "daniel", UID: 1000}, true},
+		{"usuario normal UID 59999", UsuarioEntry{Name: "usuario", UID: 59999}, true},
+		{"UID muy bajo 999", UsuarioEntry{Name: "sys", UID: 999}, false},
+		{"UID muy alto 60000", UsuarioEntry{Name: "alto", UID: 60000}, false},
+		{"nobody", UsuarioEntry{Name: "nobody", UID: 65534}, false},
+		{"protegido root", UsuarioEntry{Name: "root", UID: 0}, false},
+		{"protegido ssh_user", UsuarioEntry{Name: "consola-ssh", UID: 1001}, false},
+	}
+	for _, tc := range tests {
+		if got := tc.entry.EsUsuarioEliminable(protegidos); got != tc.ok {
+			t.Errorf("%s: EsUsuarioEliminable = %v, want %v", tc.nombre, got, tc.ok)
+		}
+	}
+}
+
+// PlanEliminar builds userdel (with -r when asked), drop-in removal, sshd -t gate, reload.
+func TestPlanEliminar(t *testing.T) {
+	casos := []struct {
+		nombre         string
+		borrarArchivos bool
+		wantArgs       []string
+	}{
+		{"sin -r", false, []string{"--", "daniel"}},
+		{"con -r", true, []string{"-r", "--", "daniel"}},
+	}
+	for _, tc := range casos {
+		p := PlanEliminar("pruebas", "daniel", tc.borrarArchivos)
+		if p.Action != "Eliminar el usuario" || p.Target != "pruebas" {
+			t.Fatalf("%s: action/target = %+v", tc.nombre, p)
+		}
+		// userdel command
+		if p.Commands[0].Name != "userdel" || strings.Join(p.Commands[0].Args, "|") != strings.Join(tc.wantArgs, "|") {
+			t.Errorf("%s: userdel args = %v, want %v", tc.nombre, p.Commands[0].Args, tc.wantArgs)
+		}
+		// drop-in removal
+		if p.Commands[1].Name != "rm" || p.Commands[1].Args[2] != "/etc/ssh/sshd_config.d/20-consola-daniel.conf" {
+			t.Errorf("%s: drop-in rm = %v", tc.nombre, p.Commands[1].Args)
+		}
+		// sshd -t gate
+		if p.Commands[2].Name != "sh" || !strings.Contains(p.Commands[2].Args[1], "sshd -t") {
+			t.Errorf("%s: sshd -t gate missing", tc.nombre)
+		}
+		// reload
+		if p.Commands[3].Name != "systemctl" || strings.Join(p.Commands[3].Args, "|") != "reload|ssh" {
+			t.Errorf("%s: systemctl reload missing: %v", tc.nombre, p.Commands[3].Args)
+		}
+		if len(p.Commands) != 4 {
+			t.Errorf("%s: want 4 commands, got %d", tc.nombre, len(p.Commands))
+		}
+	}
+}
