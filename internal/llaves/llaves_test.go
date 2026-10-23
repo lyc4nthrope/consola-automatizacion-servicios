@@ -356,3 +356,21 @@ func TestReadDeleteDownloadCaduca(t *testing.T) {
 		t.Errorf("la descarga caducada se debe borrar; stat err=%v", err)
 	}
 }
+
+// El drop-in de un usuario apaga el acceso por contraseña SOLO para ese
+// usuario (DB6): Match User + las dos directivas en "no", una por línea.
+func TestNombreYContenidoDropInUsuario(t *testing.T) {
+	nombre := NombreDropInUsuario("daniel")
+	if nombre != "20-consola-daniel.conf" {
+		t.Errorf("NombreDropInUsuario(daniel) = %q, want 20-consola-daniel.conf", nombre)
+	}
+	otro := NombreDropInUsuario("otro.sistema") // el validador no admite "." en usuarios, pero Q igual no debe romper
+	if otro != "20-consola-otro.sistema.conf" {
+		t.Errorf("NombreDropInUsuario con punto: %q", otro)
+	}
+	contenido := ContenidoDropInUsuario("daniel")
+	want := "Match User daniel\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n"
+	if contenido != want {
+		t.Errorf("ContenidoDropInUsuario(daniel) = %q, want %q", contenido, want)
+	}
+}

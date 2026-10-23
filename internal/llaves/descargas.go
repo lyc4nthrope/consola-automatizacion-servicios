@@ -22,6 +22,22 @@ func ContenidoDropInRoot() string {
 	return "PermitRootLogin prohibit-password\n"
 }
 
+// NombreDropInUsuario names the per-user drop-in the console writes for one
+// created account: 20-consola-<usuario>.conf (root uses the fixed 100-consola
+// root file above). The name is per-user so removing the user removes exactly
+// its file (B5).
+func NombreDropInUsuario(usuario string) string {
+	return "20-consola-" + usuario + ".conf"
+}
+
+// ContenidoDropInUsuario returns the exact lines of a created user's drop-in
+// (DB6): inside a Match User block for that account only, password logins are
+// off — both the classic prompt and keyboard-interactive. Wildcard values do
+// not apply: sshd keeps them off just for this user.
+func ContenidoDropInUsuario(usuario string) string {
+	return "Match User " + usuario + "\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n"
+}
+
 // reTokenDescarga accepts only the download tokens the console generates:
 // "32 lowercase hex characters". Because a token names one file under
 // keys/descargas, refusing every other shape guarantees a requested download
