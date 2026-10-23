@@ -18,6 +18,7 @@ import (
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/executor"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/llaves"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/oplog"
+	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/usuarios"
 	assets "github.com/lyc4nthrope/consola-automatizacion-servicios/web"
 )
 
@@ -220,9 +221,9 @@ const (
 // VM con el contenido de prueba y el drop-in subido queda apuntado en subidas.
 type canalLlavesFalso struct {
 	executor.Fake
-	subidas map[string]string // ruta remota -> contenido que recibió (CopyTo)
-	nuevos  []string          // comandos fuera del repertorio (debe quedar vacío)
-	codigoGetent int          // exit code de getent en el flujo crear (2 = libre)
+	subidas      map[string]string // ruta remota -> contenido que recibió (CopyTo)
+	nuevos       []string          // comandos fuera del repertorio (debe quedar vacío)
+	codigoGetent int               // exit code de getent en el flujo crear (2 = libre)
 }
 
 func canalLlavesDePrueba(t *testing.T) *canalLlavesFalso {
@@ -900,5 +901,239 @@ func TestCrearLaContraseñaViajaSoloEnStdin(t *testing.T) {
 		if strings.Contains(string(data), contrasena) {
 			t.Errorf("la contraseña quedó en %s", punto)
 		}
+	}
+}
+
+// passwdDePrueba is what getent passwd prints on a VM with system accounts, two
+// normal accounts and a malformed line. It exercises DB14's filter.
+const passwdDePrueba = `root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+daniel:x:1000:1000:Daniel:/home/daniel:/bin/bash
+viejo:x:1001:1001::/home/viejo:/bin/bash
+raro:x:65000:65000::/home/raro:/bin/bash
+sistema:x:999:999::/home/sistema:/bin/sh
+basura sin formato
+`
+
+// canalEliminarDePrueba answers the page's read-only getent passwd with the
+// fixture and accepts the deletion plan's commands, recording every call.
+func canalEliminarDePrueba(listado string) *executor.Fake {
+	canal := &executor.Fake{NameValue: "SSH"}
+	canal.RunFunc = func(c executor.Command) (executor.Result, error) {
+		if c.Name == "getent" && len(c.Args) == 1 && c.Args[0] == "passwd" {
+			return executor.Result{Stdout: listado}, nil
+		}
+		return executor.Result{}, nil
+	}
+	return canal
+}
+
+// La página lista solo las cuentas que DB14 permite borrar (UID 1000 a 59999,
+// sin nobody ni root) y lee la lista con un único getent passwd: el GET no
+// ejecuta ninguna operación destructiva.
+func TestPaginaEliminarListaFiltrada(t *testing.T) {
+	estado := newTestState()
+	canal := canalEliminarDePrueba(passwdDePrueba)
+	_ = estado.SetExecutor("pruebas", canal)
+	rec := serve(t, newTestHandler(t, estado), httptest.NewRequest("GET", "/usuarios", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /usuarios = %d", rec.Code)
+	}
+	cuerpo := rec.Body.String()
+	for _, quiero := range []string{`<option value="daniel">`, `<option value="viejo">`, "Eliminar todos los archivos", `name="confirmar"`} {
+		if !strings.Contains(cuerpo, quiero) {
+			t.Errorf("la página no muestra %q", quiero)
+		}
+	}
+	for _, noQuiero := range []string{`value="root"`, `value="daemon"`, `value="nobody"`, `value="raro"`, `value="sistema"`} {
+		if strings.Contains(cuerpo, noQuiero) {
+			t.Errorf("la página ofrece una cuenta protegida o fuera de rango: %q", noQuiero)
+		}
+	}
+	llamadas := canal.Calls()
+	if len(llamadas) != 1 || llamadas[0].String() != "getent passwd" {
+		t.Errorf("el GET envió %v; solo debía leer getent passwd", llamadas)
+	}
+}
+
+// El usuario de ssh del destino es la vía por la que la consola administra la
+// VM: nunca puede aparecer en la lista de cuentas a eliminar.
+func TestPaginaEliminarProtegeLaCuentaDeLaConsola(t *testing.T) {
+	estado := app.NewState(app.Config{Listen: app.DefaultListen, Targets: []app.Target{
+		{Name: "pruebas", VM: "consola-pruebas", IP: "192.168.40.60", SSHUser: "daniel"},
+	}})
+	canal := canalEliminarDePrueba(passwdDePrueba)
+	_ = estado.SetExecutor("pruebas", canal)
+	rec := serve(t, newTestHandler(t, estado), httptest.NewRequest("GET", "/usuarios", nil))
+	cuerpo := rec.Body.String()
+	if strings.Contains(cuerpo, `<option value="daniel">`) {
+		t.Error("la lista ofrece la cuenta ssh de la consola (daniel)")
+	}
+	if !strings.Contains(cuerpo, `<option value="viejo">`) {
+		t.Error("la lista no ofrece la cuenta normal viejo")
+	}
+}
+
+// Sin canal no hay lista que mostrar: la página lo explica en lugar del campo.
+func TestPaginaEliminarSinCanalAvisa(t *testing.T) {
+	rec := serve(t, newTestHandler(t, newTestState()), httptest.NewRequest("GET", "/usuarios", nil))
+	cuerpo := rec.Body.String()
+	if !strings.Contains(cuerpo, "todavía no tiene canal con la VM") {
+		t.Error("la página no explica que falta el canal")
+	}
+	if strings.Contains(cuerpo, `name="confirmar"`) {
+		t.Error("la página ofrece el desplegable sin canal")
+	}
+}
+
+// El primer envío NO elimina: pide confirmación en una segunda pantalla con
+// el nombre elegido y el estado de la casilla, y no manda ningún comando más
+// allá de la lectura de la lista.
+func TestConfirmacionPideSegundaPantallaSinEliminar(t *testing.T) {
+	estado := newTestState()
+	canal := canalEliminarDePrueba(passwdDePrueba)
+	_ = estado.SetExecutor("pruebas", canal)
+	rec := serve(t, newTestHandler(t, estado), httptest.NewRequest("GET", "/usuarios?confirmar=viejo&archivos=on", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET de confirmación = %d", rec.Code)
+	}
+	cuerpo := rec.Body.String()
+	for _, quiero := range []string{"¿Eliminar a", "viejo", "Esta acción no se puede deshacer", "/home/viejo", `name="usuario" value="viejo"`, `name="archivos" value="on"`, "Cancelar"} {
+		if !strings.Contains(cuerpo, quiero) {
+			t.Errorf("la confirmación no muestra %q", quiero)
+		}
+	}
+	for _, c := range canal.Calls() {
+		if c.Name == "userdel" || c.Name == "rm" || c.Name == "systemctl" {
+			t.Errorf("la confirmación ya ejecutó un comando destructivo: %s", c.String())
+		}
+	}
+}
+
+// Una petición manipulada con un nombre protegido no llega a la pantalla de
+// confirmación: la página vuelve al formulario.
+func TestConfirmacionIgnoraCuentasProtegidas(t *testing.T) {
+	estado := newTestState()
+	_ = estado.SetExecutor("pruebas", canalEliminarDePrueba(passwdDePrueba))
+	rec := serve(t, newTestHandler(t, estado), httptest.NewRequest("GET", "/usuarios?confirmar=root", nil))
+	cuerpo := rec.Body.String()
+	if strings.Contains(cuerpo, "¿Eliminar a") {
+		t.Error("la confirmación aceptó root")
+	}
+	if !strings.Contains(cuerpo, `name="confirmar"`) {
+		t.Error("la página no volvió al formulario")
+	}
+}
+
+// El POST ejecuta el plan exacto de B5: userdel con o sin -r, el borrado del
+// drop-in del usuario, la compuerta sshd -t y la recarga del servicio.
+func TestEliminarConYSinArchivos(t *testing.T) {
+	casos := []struct {
+		nombre   string
+		archivos bool
+	}{
+		{"sin archivos", false},
+		{"con archivos", true},
+	}
+	for _, caso := range casos {
+		t.Run(caso.nombre, func(t *testing.T) {
+			estado := newTestState()
+			canal := canalEliminarDePrueba(passwdDePrueba)
+			_ = estado.SetExecutor("pruebas", canal)
+			h, _ := newTestHandlerWithLog(t, estado)
+
+			forma := url.Values{"usuario": {"viejo"}}
+			if caso.archivos {
+				forma.Set("archivos", "on")
+			}
+			rec := serve(t, h, postForm("/usuarios/eliminar", forma))
+			if rec.Code != http.StatusSeeOther {
+				t.Fatalf("POST /usuarios/eliminar = %d, want 303 (%s)", rec.Code, rec.Body.String())
+			}
+			if !strings.HasPrefix(rec.Header().Get("Location"), "/resultado/") {
+				t.Errorf("Location = %q, want /resultado/…", rec.Header().Get("Location"))
+			}
+
+			want := usuarios.PlanEliminar("pruebas", "viejo", caso.archivos).Commands
+			llamadas := canal.Calls()
+			if len(llamadas) != len(want) {
+				t.Fatalf("el flujo envió %d comandos, want %d: %v", len(llamadas), len(want), llamadas)
+			}
+			for i, real := range llamadas {
+				if real.String() != want[i].String() {
+					t.Errorf("el comando %d fue %q, want %q", i, real.String(), want[i].String())
+				}
+			}
+		})
+	}
+}
+
+// root, nobody y la cuenta ssh de la consola se rechazan junto al campo y sin
+// enviar NINGÚN comando a la VM (DB14).
+func TestEliminarRechazaCuentasProtegidas(t *testing.T) {
+	for _, protegida := range []string{"root", "nobody"} {
+		t.Run(protegida, func(t *testing.T) {
+			estado := newTestState()
+			canal := canalEliminarDePrueba(passwdDePrueba)
+			_ = estado.SetExecutor("pruebas", canal)
+			rec := serve(t, newTestHandler(t, estado), postForm("/usuarios/eliminar", url.Values{"usuario": {protegida}}))
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("POST = %d, want 422", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), "No se puede eliminar la cuenta") {
+				t.Error("el aviso no explica el rechazo")
+			}
+			if llamadas := canal.Calls(); len(llamadas) != 0 {
+				t.Errorf("se enviaron comandos: %v", llamadas)
+			}
+		})
+	}
+}
+
+// También se rechaza el usuario ssh del destino, aunque su UID sea normal.
+func TestEliminarRechazaElUsuarioSSH(t *testing.T) {
+	estado := app.NewState(app.Config{Listen: app.DefaultListen, Targets: []app.Target{
+		{Name: "pruebas", VM: "consola-pruebas", IP: "192.168.40.60", SSHUser: "daniel"},
+	}})
+	canal := canalEliminarDePrueba(passwdDePrueba)
+	_ = estado.SetExecutor("pruebas", canal)
+	rec := serve(t, newTestHandler(t, estado), postForm("/usuarios/eliminar", url.Values{"usuario": {"daniel"}}))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST = %d, want 422", rec.Code)
+	}
+	if llamadas := canal.Calls(); len(llamadas) != 0 {
+		t.Errorf("se enviaron comandos: %v", llamadas)
+	}
+}
+
+// Sin SSH no se elimina nada: el canal de Guest Additions no basta.
+func TestEliminarRechazaSinSSH(t *testing.T) {
+	estado := newTestState()
+	canal := &executor.Fake{NameValue: "Guest Additions"}
+	_ = estado.SetExecutor("pruebas", canal)
+	rec := serve(t, newTestHandler(t, estado), postForm("/usuarios/eliminar", url.Values{"usuario": {"viejo"}}))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST = %d, want 422", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "primero usa «Conectar por SSH»") {
+		t.Error("el aviso no pide conectar por SSH")
+	}
+	if llamadas := canal.Calls(); len(llamadas) != 0 {
+		t.Errorf("se enviaron comandos: %v", llamadas)
+	}
+}
+
+// Un nombre inválido se rechaza en Go, antes de tocar la VM.
+func TestEliminarRechazaNombreInvalido(t *testing.T) {
+	estado := newTestState()
+	canal := canalEliminarDePrueba(passwdDePrueba)
+	_ = estado.SetExecutor("pruebas", canal)
+	rec := serve(t, newTestHandler(t, estado), postForm("/usuarios/eliminar", url.Values{"usuario": {"Root!"}}))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST = %d, want 422", rec.Code)
+	}
+	if llamadas := canal.Calls(); len(llamadas) != 0 {
+		t.Errorf("se enviaron comandos: %v", llamadas)
 	}
 }

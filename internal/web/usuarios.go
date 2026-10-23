@@ -14,16 +14,23 @@ package web
 // the name is free with getent, creating the account with the password going
 // through chpasswd's Stdin only, the optional sudo membership, and the optional
 // ed25519 key pair the user downloads once — with the same sshd gate and
-// reload the root flow uses, guarded by sshd -t before it reloads.
+// reload the root flow uses, guarded by sshd -t before it reloads. B5 adds the
+// deletion side: the page lists the VM's own accounts (getent passwd filtered in
+// Go), the first screen only asks for confirmation, and the delete runs userdel
+// (with or without the files), removes the per-user drop-in and reloads sshd
+// behind the same gate — never for root or an account the console needs.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 
+	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/app"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/executor"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/llaves"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/operacion"
@@ -37,6 +44,7 @@ func init() {
 		r.HandleFunc("GET /usuarios", s.usuariosPagina)
 		r.HandleFunc("POST /usuarios/conectar-ssh", s.conectarSSH)
 		r.HandleFunc("POST /usuarios/crear", s.usuarioCrear)
+		r.HandleFunc("POST /usuarios/eliminar", s.usuarioEliminar)
 		r.HandleFunc("POST /usuarios/llaves-root", s.llavesRoot)
 		r.HandleFunc("GET /usuarios/llaves/listo/{token}", s.llaveLista)
 		r.HandleFunc("GET /usuarios/llaves/{token}", s.descargarLlave)
@@ -90,13 +98,83 @@ mv "$t" "$1"`
 
 // usuariosDatos is what the module's page template receives (as .Data).
 type usuariosDatos struct {
-	Canal      string // the channel the current target uses right now
-	Formulario string // which form on this page owns the shown error report ("" = none)
+	Canal             string   // the channel the current target uses right now
+	Formulario        string   // which form on this page owns the shown error report ("" = none)
+	Usuarios          []string // accounts B5 may delete (DB14); empty when the list could not be read
+	AvisoLista        string   // why the deletion form has no list (shown in its place)
+	Confirmar         string   // account waiting for the second screen ("" = show the deletion form)
+	ConfirmarArchivos bool     // "Eliminar todos los archivos" chosen on the first screen
 }
 
+// usuariosPagina shows the module. The deletion form lists the VM's own
+// accounts, so the page reads getent passwd through the active channel (a
+// GET that only reads; it is not an operation in the log) and filters the
+// result in Go with DB14: UID 1000-59999, never nobody, root, the target's
+// ssh user or its guest user. The first screen never deletes anything: it
+// links to ?confirmar=<u> (and ?archivos=on) so the template can render the
+// second screen with "Eliminar" and "Cancelar".
 func (s *server) usuariosPagina(w http.ResponseWriter, r *http.Request) {
 	cur := s.state.Current()
-	s.renderModule(w, r, "usuarios", http.StatusOK, Form{}, usuariosDatos{Canal: s.state.Channel(cur.Name)})
+	datos := usuariosDatos{Canal: s.state.Channel(cur.Name)}
+	if ex, hayCanal := s.state.Executor(cur.Name); hayCanal {
+		datos.Usuarios, datos.AvisoLista = cuentasEliminables(r.Context(), ex, cur)
+	} else {
+		datos.AvisoLista = "La consola todavía no tiene canal con la VM: usa «Conectar por SSH» para poder listar y eliminar cuentas."
+	}
+	consulta := r.URL.Query()
+	if confirmar := strings.TrimSpace(consulta.Get("confirmar")); confirmar != "" && contieneCuenta(datos.Usuarios, confirmar) {
+		datos.Confirmar = confirmar
+		datos.ConfirmarArchivos = consulta.Get("archivos") != ""
+	}
+	s.renderModule(w, r, "usuarios", http.StatusOK, Form{}, datos)
+}
+
+// cuentasEliminables reads getent passwd and returns the account names DB14
+// lets the console delete, sorted for a stable dropdown. The second value is
+// the explanation the page shows instead of the list when there is none.
+func cuentasEliminables(ctx context.Context, ex executor.Executor, target app.Target) ([]string, string) {
+	res, err := ex.Run(ctx, executor.Command{Name: "getent", Args: []string{"passwd"}})
+	if err != nil || res.ExitCode != 0 {
+		return nil, "No se pudo leer la lista de cuentas de la VM: revisa el canal y vuelve a intentarlo."
+	}
+	protegidos := protegidosDe(target)
+	var nombres []string
+	for _, linea := range strings.Split(res.Stdout, "\n") {
+		linea = strings.TrimSuffix(linea, "\r")
+		cuenta, ok := usuarios.ParseUsuarioEntry(linea)
+		if !ok || !cuenta.EsUsuarioEliminable(protegidos) {
+			continue
+		}
+		nombres = append(nombres, cuenta.Name)
+	}
+	sort.Strings(nombres)
+	if len(nombres) == 0 {
+		return nil, "No hay cuentas eliminables en la VM: solo existen root, las cuentas del sistema y las que la consola necesita."
+	}
+	return nombres, ""
+}
+
+// protegidosDe is DB14's exclusion set: root, nobody, the target's ssh user
+// (the account the console connects with) and its Guest Additions user. The
+// console must never remove the account that gives it access to the VM.
+func protegidosDe(target app.Target) map[string]bool {
+	protegidos := map[string]bool{"root": true, "nobody": true}
+	if target.SSHUser != "" {
+		protegidos[target.SSHUser] = true
+	}
+	if target.GuestUser != "" {
+		protegidos[target.GuestUser] = true
+	}
+	return protegidos
+}
+
+func contieneCuenta(cuentas []string, cuenta string) bool {
+	for _, nombre := range cuentas {
+		if nombre == cuenta {
+			return true
+		}
+	}
+	return false
 }
 
 // conectarSSH is the B2 action: install the console key in the VM (whatever
@@ -466,8 +544,8 @@ func planConfigurarSSHRoot(target string) operacion.Plan {
 	recargar := executor.Command{Name: "systemctl", Args: []string{"reload", "ssh"}}
 	verificar := executor.Command{Name: "sh", Args: []string{"-c", dropInVerificadoScript}}
 	return operacion.Plan{
-		Action: "Configurar el acceso de root por SSH",
-		Target: target,
+		Action:   "Configurar el acceso de root por SSH",
+		Target:   target,
 		Commands: []executor.Command{instalar, prueba, recargar, verificar},
 		Success: func(res []executor.Result) string {
 			return "El sshd de la VM ahora deja entrar a root solo con llaves: el drop-in " + dropInDestino + " pasó el sshd -t, el servicio se recargó y el sshd -T confirma PermitRootLogin prohibit-password."
@@ -781,6 +859,54 @@ func (s *server) usuarioCrear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/usuarios/llaves/listo/"+token+"?id="+eE.ID, http.StatusSeeOther)
+}
+
+// usuarioEliminar is B5's action. The browser reaches it only from the second
+// screen the page renders after "Continuar" (?confirmar=<u>[&archivos=on]), so
+// a single click never deletes anything. The handler refuses DB14's protected
+// accounts and any invalid name BEFORE running a command, and only then sends
+// PlanEliminar: userdel (with -r when the checkbox asked), the per-user drop-in
+// removal, the sshd -t gate and the reload. The result lands on the ordinary
+// operation page, where the "user has active processes" stderr gets its own
+// explanation.
+func (s *server) usuarioEliminar(w http.ResponseWriter, r *http.Request) {
+	cur := s.state.Current()
+	datos := usuariosDatos{Canal: s.state.Channel(cur.Name), Formulario: "eliminar"}
+	mostrar := func(estado int, form Form) {
+		// A rejected form sends NO command (DB14's test asks for exactly that),
+		// so the list is not re-read here: the page tells the user to reload it.
+		datos.AvisoLista = "Vuelve a abrir esta página para ver la lista de cuentas."
+		s.renderModule(w, r, "usuarios", estado, form, datos)
+	}
+	ex, hayCanal := s.state.Executor(cur.Name)
+	if !hayCanal || ex.Name() != "SSH" {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "Para eliminar un usuario, la VM ya debe estar conectada por SSH: primero usa «Conectar por SSH»."}})
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "No se pudo leer el formulario. Vuelve a intentarlo."}})
+		return
+	}
+	usuario := strings.TrimSpace(r.PostForm.Get("usuario"))
+	archivos := r.PostForm.Get("archivos") != ""
+	if err := validate.Usuario(usuario); err != nil {
+		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario}, Errors: FieldErrors(err)})
+		return
+	}
+	if protegidosDe(cur)[usuario] {
+		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario}, Errors: map[string]string{"usuario": "No se puede eliminar la cuenta «" + usuario + "»: la consola la necesita para seguir administrando la VM."}})
+		return
+	}
+
+	e, pudo, escrito := s.runPaso(w, r, usuarios.PlanEliminar(cur.Name, usuario, archivos))
+	if escrito {
+		return
+	}
+	if !pudo {
+		s.porFallo(w, r, cur.Name, "", e, true, "", operacion.Plan{})
+		return
+	}
+	http.Redirect(w, r, "/resultado/"+e.ID, http.StatusSeeOther)
 }
 
 // llaveLista is the page the browser lands on after the flow: it offers the

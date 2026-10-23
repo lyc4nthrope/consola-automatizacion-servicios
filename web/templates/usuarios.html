@@ -48,11 +48,39 @@
 
 <section class="block" aria-labelledby="eliminar-titulo">
   <h2 id="eliminar-titulo" class="block-title">Eliminar usuario</h2>
-  <ul class="actions">
-    <li class="action">
-      <span>Eliminar una cuenta con su sudo y sus llaves</span>
-      <span class="badge-c badge-muted"><i class="bi bi-cone-striped" aria-hidden="true"></i> En construcción</span>
-    </li>
-  </ul>
+  {{if .Data.Confirmar}}
+  <div class="panel-c form-c">
+    <p class="field-hint">¿Eliminar a <strong class="mono" translate="no">{{.Data.Confirmar}}</strong>? Esta acción no se puede deshacer.{{if .Data.ConfirmarArchivos}} También se borrarán su carpeta <span class="mono" translate="no">/home/{{.Data.Confirmar}}</span> y sus archivos.{{end}}</p>
+    <form method="post" action="/usuarios/eliminar" data-operacion="Eliminar el usuario">
+      <input type="hidden" name="usuario" value="{{.Data.Confirmar}}">
+      {{if .Data.ConfirmarArchivos}}<input type="hidden" name="archivos" value="on">{{end}}
+      <div class="form-actions">
+        <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Eliminar</button>
+        <a class="btn btn-outline-accent" href="/usuarios">Cancelar</a>
+      </div>
+    </form>
+  </div>
+  {{else}}
+  <form class="panel-c form-c" method="get" action="/usuarios" novalidate>
+    {{if eq .Data.Formulario "eliminar"}}{{template "resumen-errores" .Form}}{{end}}
+    <p class="field-hint">Elimina una cuenta normal de la VM y, si lo pides, todo lo que hay en su carpeta <span class="mono" translate="no">/home</span>. Antes de borrar nada, la consola pide confirmación en una segunda pantalla.</p>
+    {{if .Data.AvisoLista}}
+    <p class="field-hint">{{.Data.AvisoLista}}</p>
+    {{else}}
+    <label class="form-label" for="eliminar">Cuenta</label>
+    <select class="form-select" id="eliminar" name="confirmar" {{aria .Form "eliminar" "eliminar-ayuda"}}>
+      {{range .Data.Usuarios}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+    <p class="field-hint" id="eliminar-ayuda">Solo aparecen cuentas normales (UID 1000 a 59999): nunca root ni la cuenta con la que la consola administra la VM.</p>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="archivos" name="archivos" value="on">
+      <label class="form-check-label" for="archivos">Eliminar todos los archivos</label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Continuar</button>
+    </div>
+    {{end}}
+  </form>
+  {{end}}
 </section>
 {{end}}
