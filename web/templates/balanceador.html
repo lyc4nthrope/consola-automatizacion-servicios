@@ -1,35 +1,64 @@
 {{define "content"}}
-<div class="modulo-container">
-    <h2>Gestión de Balanceador HAProxy</h2>
+<header class="page-head">
+  <p class="eyebrow"><i class="bi {{.Module.Icon}}" aria-hidden="true"></i> Módulo</p>
+  <h1>{{.Module.Title}}</h1>
+  <p class="lead-c">{{.Module.Summary}}</p>
+</header>
 
-    <section class="seccion-form">
-        <h3>Agregar Servidor Backend</h3>
-        <form action="/balanceador/agregar" method="POST">
-            <label for="nombre">Nombre del Backend:</label>
-            <input type="text" id="nombre" name="nombre" value="{{.Form.Values.nombre}}" required {{aria .Form "nombre"}}>
-            {{template "error-campo" (campo .Form "nombre")}}
+<section class="block" aria-labelledby="agregar-titulo">
+  <h2 id="agregar-titulo" class="block-title">Agregar servidor al back-end</h2>
+  <form class="panel-c form-c" method="post" action="/balanceador/agregar" data-operacion="Agregar servidor a HAProxy" novalidate>
+    {{if .Data}}{{if eq .Data.Formulario "agregar"}}{{template "resumen-errores" $.Form}}{{end}}{{end}}
 
-            <label for="ip">Dirección IP:</label>
-            <input type="text" id="ip" name="ip" value="{{.Form.Values.ip}}" required {{aria .Form "ip"}}>
-            {{template "error-campo" (campo .Form "ip")}}
+    <label class="form-label" for="backend">Nombre del back-end</label>
+    <input class="form-control mono" id="backend" name="backend" type="text" value="{{index .Form.Values "backend"}}"
+      maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "backend" "backend-ayuda"}}>
+    {{template "error-campo" (campo .Form "backend")}}
+    <p class="field-hint" id="backend-ayuda">Sección del balanceador donde se enviará el tráfico, por ejemplo <span class="mono" translate="no">web_servers</span>.</p>
 
-            <label for="puerto">Puerto:</label>
-            <input type="text" id="puerto" name="puerto" value="{{.Form.Values.puerto}}" required {{aria .Form "puerto"}}>
-            {{template "error-campo" (campo .Form "puerto")}}
+    <label class="form-label" for="ip">Dirección IP del servidor</label>
+    <input class="form-control mono" id="ip" name="ip" type="text" value="{{index .Form.Values "ip"}}"
+      maxlength="45" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "ip" "ip-ayuda"}}>
+    {{template "error-campo" (campo .Form "ip")}}
+    <p class="field-hint" id="ip-ayuda">IP IPv4 o IPv6 del nodo backend, por ejemplo <span class="mono" translate="no">192.168.1.50</span>.</p>
 
-            <button type="submit">Agregar al Balanceador</button>
-        </form>
-    </section>
+    <label class="form-label" for="puerto">Puerto TCP</label>
+    <input class="form-control mono" id="puerto" name="puerto" type="text" value="{{index .Form.Values "puerto"}}"
+      maxlength="5" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "puerto" "puerto-ayuda"}}>
+    {{template "error-campo" (campo .Form "puerto")}}
+    <p class="field-hint" id="puerto-ayuda">Puerto en el que escucha la aplicación en el nodo backend, por ejemplo <span class="mono" translate="no">8080</span>.</p>
 
-    <section class="seccion-form">
-        <h3>Quitar Servidor Backend</h3>
-        <form action="/balanceador/quitar" method="POST">
-            <label for="nombre-quitar">Nombre del Backend:</label>
-            <input type="text" id="nombre-quitar" name="nombre" value="{{.Form.Values.nombre}}" required {{aria .Form "nombre"}}>
-            {{template "error-campo" (campo .Form "nombre")}}
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-plus-circle" aria-hidden="true"></i> Agregar Servidor</button>
+    </div>
+  </form>
+</section>
 
-            <button type="submit">Quitar del Balanceador</button>
-        </form>
-    </section>
-</div>
+<section class="block" aria-labelledby="quitar-titulo">
+  <h2 id="quitar-titulo" class="block-title">Quitar servidor del back-end</h2>
+  <form class="panel-c form-c" method="post" action="/balanceador/quitar" data-operacion="Quitar servidor de HAProxy" novalidate>
+    {{if .Data}}{{if eq .Data.Formulario "quitar"}}{{template "resumen-errores" $.Form}}{{end}}{{end}}
+
+    <label class="form-label" for="backend-quitar">Nombre del back-end</label>
+    <input class="form-control mono" id="backend-quitar" name="backend" type="text" value="{{index .Form.Values "backend"}}"
+      maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "backend-quitar" "backend-quitar-ayuda"}}>
+    {{template "error-campo" (campo .Form "backend")}}
+    <p class="field-hint" id="backend-quitar-ayuda">Sección del balanceador de la que se removerá la línea, por ejemplo <span class="mono" translate="no">web_servers</span>.</p>
+
+    <label class="form-label" for="ip-quitar">Dirección IP a remover</label>
+    <input class="form-control mono" id="ip-quitar" name="ip" type="text" value="{{index .Form.Values "ip"}}"
+      maxlength="45" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "ip-quitar" "ip-quitar-ayuda"}}>
+    {{template "error-campo" (campo .Form "ip")}}
+    <p class="field-hint" id="ip-quitar-ayuda">Dirección IP del servidor que dejará de recibir tráfico.</p>
+
+    <div class="form-actions">
+      <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Quitar Servidor</button>
+    </div>
+  </form>
+</section>
 {{end}}
