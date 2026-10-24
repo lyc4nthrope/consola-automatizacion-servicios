@@ -1,138 +1,183 @@
+// Package balanceador edits haproxy.cfg as plain text: pure functions that receive the
+// file read from the VM and return the new file. Nothing here talks to the VM.
 package balanceador
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
+
+	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/validate"
 )
 
-// Server representa una línea de backend en HAProxy.
+// Server is one "server" line of a backend section.
 type Server struct {
 	Name string
 	IP   string
 	Port string
 }
 
-const (
-	defaultFrontend = "frontend consola_front\n    bind *:80\n    default_backend consola_back\n\n"
-	defaultBackend  = "backend consola_back\n    balance roundrobin\n"
-)
+// Address is how HAProxy writes the server: ip:port.
+func (s Server) Address() string { return s.IP + ":" + s.Port }
 
-// ListServers extrae los servidores configurados en consola_back.
-func ListServers(cfg string) []Server {
-	var servers []Server
-	inBackend := false
+// sectionKeywords start a new section in haproxy.cfg; every other line belongs to the
+// section above it.
+var sectionKeywords = map[string]bool{
+	"global": true, "defaults": true, "frontend": true, "backend": true, "listen": true,
+	"resolvers": true, "peers": true, "userlist": true, "program": true, "mailers": true,
+	"http-errors": true, "cache": true, "ring": true,
+}
 
-	lines := strings.Split(cfg, "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "backend consola_back") {
-			inBackend = true
+var reBackend = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$`)
+
+// ValidateBackend checks the backend name from the form. HAProxy names allow letters,
+// digits, '-', '_', '.' and ':'.
+func ValidateBackend(name string) error {
+	if !reBackend.MatchString(name) {
+		return &validate.Error{Field: "backend", Msg: "El nombre del back-end solo admite letras, números y los signos - _ . : (hasta 64), y empieza con letra o número. Ejemplo: web_servers"}
+	}
+	return nil
+}
+
+// ServerName is the name the console gives a server it adds: derived from its address,
+// so the same address always gets the same name. Example: srv-192-168-40-51-8080.
+func ServerName(ip, port string) string {
+	return "srv-" + strings.ReplaceAll(ip, ".", "-") + "-" + port
+}
+
+// section returns the first and last line index (inclusive) of "backend <name>", or
+// -1, -1 when the backend does not exist.
+func section(lines []string, kind, name string) (int, int) {
+	start := -1
+	for i, line := range lines {
+		f := strings.Fields(stripComment(line))
+		if len(f) == 0 || !sectionKeywords[f[0]] {
 			continue
 		}
-		if inBackend && (strings.HasPrefix(trimmed, "backend ") || strings.HasPrefix(trimmed, "frontend ")) {
-			break
+		if start >= 0 {
+			return start, i - 1
 		}
-		if inBackend && strings.HasPrefix(trimmed, "server ") {
-			parts := strings.Fields(trimmed)
-			if len(parts) >= 3 {
-				name := parts[1]
-				ipPort := strings.Split(parts[2], ":")
-				ip := ipPort[0]
-				port := "8080"
-				if len(ipPort) > 1 {
-					port = ipPort[1]
-				}
-				servers = append(servers, Server{Name: name, IP: ip, Port: port})
+		if f[0] == kind && len(f) > 1 && f[1] == name {
+			start = i
+		}
+	}
+	if start >= 0 {
+		return start, len(lines) - 1
+	}
+	return -1, -1
+}
+
+func stripComment(line string) string {
+	if i := strings.IndexByte(line, '#'); i >= 0 {
+		return line[:i]
+	}
+	return line
+}
+
+// Backends lists the backend names in the order they appear.
+func Backends(cfg string) []string {
+	var out []string
+	for _, line := range strings.Split(cfg, "\n") {
+		f := strings.Fields(stripComment(line))
+		if len(f) > 1 && f[0] == "backend" {
+			out = append(out, f[1])
+		}
+	}
+	return out
+}
+
+// ListServers returns the servers of one backend.
+func ListServers(cfg, backend string) []Server {
+	lines := strings.Split(cfg, "\n")
+	start, end := section(lines, "backend", backend)
+	var out []Server
+	for i := start + 1; start >= 0 && i <= end; i++ {
+		if s, ok := parseServer(lines[i]); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func parseServer(line string) (Server, bool) {
+	f := strings.Fields(stripComment(line))
+	if len(f) < 3 || f[0] != "server" {
+		return Server{}, false
+	}
+	ip, port, _ := strings.Cut(f[2], ":")
+	return Server{Name: f[1], IP: ip, Port: port}, true
+}
+
+func missingBackend(cfg, backend string) error {
+	if all := Backends(cfg); len(all) > 0 {
+		return fmt.Errorf("El back-end «%s» no existe en haproxy.cfg. Los que hay son: %s.", backend, strings.Join(all, ", "))
+	}
+	return fmt.Errorf("haproxy.cfg no tiene ningún back-end; crea uno (por ejemplo «backend web_servers») antes de agregar servidores.")
+}
+
+// AddServer adds "server <name> <ip>:<port> check" at the end of the backend, with the
+// indentation of the section. The backend must exist, and an address already in it is
+// rejected (adding it twice would send it double traffic).
+func AddServer(cfg, backend string, srv Server) (string, error) {
+	lines := strings.Split(cfg, "\n")
+	start, end := section(lines, "backend", backend)
+	if start < 0 {
+		return "", missingBackend(cfg, backend)
+	}
+	indent := "    "
+	last := start
+	for i := start + 1; i <= end; i++ {
+		if s, ok := parseServer(lines[i]); ok {
+			if s.Address() == srv.Address() {
+				return "", fmt.Errorf("%s ya está en el back-end «%s» (como «%s»); no se agregó de nuevo.", srv.Address(), backend, s.Name)
+			}
+			if s.Name == srv.Name {
+				return "", fmt.Errorf("Ya hay un servidor llamado «%s» en el back-end «%s».", srv.Name, backend)
+			}
+		}
+		if strings.TrimSpace(lines[i]) != "" {
+			last = i
+			if i > start {
+				indent = lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
 			}
 		}
 	}
-	return servers
+	if indent == "" {
+		indent = "    "
+	}
+	line := indent + "server " + srv.Name + " " + srv.Address() + " check"
+	out := append([]string{}, lines[:last+1]...)
+	out = append(out, line)
+	out = append(out, lines[last+1:]...)
+	return strings.Join(out, "\n"), nil
 }
 
-// AddServer agrega un servidor a consola_back. Si no existen los bloques, los crea (DC12).
-func AddServer(cfg string, srv Server) (string, error) {
-	servers := ListServers(cfg)
-	for _, s := range servers {
-		if s.Name == srv.Name {
-			return cfg, fmt.Errorf("ya existe un servidor con el nombre %s", srv.Name)
-		}
-		if s.IP == srv.IP && s.Port == srv.Port {
-			return cfg, fmt.Errorf("ya existe un servidor apuntando a %s:%s", srv.IP, srv.Port)
-		}
-	}
-
-	serverLine := fmt.Sprintf("    server %s %s:%s check\n", srv.Name, srv.IP, srv.Port)
-
-	if !strings.Contains(cfg, "backend consola_back") {
-		var sb strings.Builder
-		sb.WriteString(cfg)
-		if !strings.HasSuffix(cfg, "\n") {
-			sb.WriteString("\n")
-		}
-		sb.WriteString(defaultFrontend)
-		sb.WriteString(defaultBackend)
-		sb.WriteString(serverLine)
-		return sb.String(), nil
-	}
-
+// RemoveServer removes every server of the backend that points to ip. It refuses to
+// remove the last server, because the backend would answer every request with 503.
+func RemoveServer(cfg, backend, ip string) (string, error) {
 	lines := strings.Split(cfg, "\n")
-	var result []string
-	inBackend := false
-	added := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "backend consola_back") {
-			inBackend = true
-			result = append(result, line)
-			continue
-		}
-
-		if inBackend && !added && (strings.HasPrefix(trimmed, "backend ") || strings.HasPrefix(trimmed, "frontend ")) {
-			result = append(result, strings.TrimRight(serverLine, "\n"))
-			added = true
-			inBackend = false
-		}
-		result = append(result, line)
+	start, end := section(lines, "backend", backend)
+	if start < 0 {
+		return "", missingBackend(cfg, backend)
 	}
-
-	if inBackend && !added {
-		result = append(result, strings.TrimRight(serverLine, "\n"))
-	}
-
-	return strings.Join(result, "\n"), nil
-}
-
-// RemoveServer elimina un servidor por nombre del bloque consola_back.
-func RemoveServer(cfg string, name string) (string, error) {
-	lines := strings.Split(cfg, "\n")
-	var result []string
-	inBackend := false
-	found := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "backend consola_back") {
-			inBackend = true
-			result = append(result, line)
-			continue
+	var out []string
+	removed, total := 0, 0
+	for i, line := range lines {
+		if s, ok := parseServer(line); ok && i > start && i <= end {
+			total++
+			if s.IP == ip {
+				removed++
+				continue
+			}
 		}
-
-		if inBackend && (strings.HasPrefix(trimmed, "backend ") || strings.HasPrefix(trimmed, "frontend ")) {
-			inBackend = false
-		}
-
-		if inBackend && strings.HasPrefix(trimmed, "server "+name+" ") {
-			found = true
-			continue
-		}
-
-		result = append(result, line)
+		out = append(out, line)
 	}
-
-	if !found {
-		return cfg, fmt.Errorf("el servidor %s no existe en la configuración", name)
+	switch {
+	case removed == 0:
+		return "", fmt.Errorf("El back-end «%s» no tiene ningún servidor con la IP %s; no se cambió nada.", backend, ip)
+	case removed == total:
+		return "", errors.New("Ese es el único servidor del back-end «" + backend + "»: sin servidores, HAProxy respondería 503 a todas las peticiones. Agrega otro antes de quitarlo.")
 	}
-
-	return strings.Join(result, "\n"), nil
+	return strings.Join(out, "\n"), nil
 }
