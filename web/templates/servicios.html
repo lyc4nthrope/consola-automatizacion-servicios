@@ -1,0 +1,49 @@
+{{define "content"}}
+<div class="modulo-container">
+    <h2>Gestión de Servicios systemd</h2>
+    
+    <section class="seccion-form">
+        <h3>Desplegar Aplicación</h3>
+        <form action="/servicios/desplegar" method="POST">
+            <label for="aplicacion">Aplicación:</label>
+            <input type="text" id="aplicacion" name="aplicacion" value="{{.Form.Values.aplicacion}}" required>
+            {{template "error-campo" (campo .Form "aplicacion")}}
+
+            <label for="nombre">Nombre del Servicio:</label>
+            <input type="text" id="nombre" name="nombre" value="{{.Form.Values.nombre}}" required {{aria .Form "nombre"}}>
+            {{template "error-campo" (campo .Form "nombre")}}
+
+            <label for="ejecutable">Ejecutable:</label>
+            <input type="text" id="ejecutable" name="ejecutable" value="{{.Form.Values.ejecutable}}" required>
+
+            <label for="puerto">Puerto (Opcional):</label>
+            <input type="text" id="puerto" name="puerto" value="{{.Form.Values.puerto}}" {{aria .Form "puerto"}}>
+            {{template "error-campo" (campo .Form "puerto")}}
+
+            <button type="submit">Desplegar Servicio</button>
+        </form>
+    </section>
+
+    <section class="seccion-form">
+        <h3>Acciones de Servicio</h3>
+        <form action="/servicios/accion" method="POST">
+            <label for="nombre-accion">Nombre del Servicio:</label>
+            <input type="text" id="nombre-accion" name="nombre" value="{{.Form.Values.nombre}}" required {{aria .Form "nombre"}}>
+            {{template "error-campo" (campo .Form "nombre")}}
+
+            <label for="accion">Acción:</label>
+            <select id="accion" name="accion">
+                <option value="start">Iniciar (start)</option>
+                <option value="stop">Detener (stop)</option>
+                <option value="restart">Reiniciar (restart)</option>
+                <option value="reload">Recargar (reload)</option>
+                <option value="status">Estado (status)</option>
+                <option value="enable">Habilitar (enable)</option>
+                <option value="disable">Deshabilitar (disable)</option>
+            </select>
+
+            <button type="submit">Ejecutar Acción</button>
+        </form>
+    </section>
+</div>
+{{end}}
