@@ -1,148 +1,229 @@
 package web
 
 import (
+	"bytes"
+	"fmt"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/executor"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/operacion"
-	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/oplog"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/servicios"
 	"github.com/lyc4nthrope/consola-automatizacion-servicios/internal/validate"
 )
 
-const (
-	// ensureUserScript creates the system user $1 only if it does not exist, so a second
-	// deployment of the same service works.
-	ensureUserScript = `id -u -- "$1" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin -- "$1"`
-	// writeUnitScript writes the unit ($1) to $2 atomically. The content travels as an
-	// argument, never as shell text.
-	writeUnitScript = `set -e; umask 022
-t=$(mktemp "$2.consola-XXXXXX")
+const ensureUserScript = `id -u "$1" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$1"
+install -d -m 750 -o "$1" -g "$1" "/var/lib/$1"`
+
+const writeUnitScript = `t=$(mktemp)
 trap 'rm -f "$t"' EXIT
 printf '%s' "$1" > "$t"
-chmod 644 "$t"
-mv "$t" "$2"`
-)
+install -m 644 -o root -g root "$t" "$2"
+systemctl daemon-reload
+systemd-analyze verify "$2"`
 
 func init() {
 	registerModule("servicios", func(s *server, r *ModuleRouter) {
-		r.HandleFunc("GET /servicios", s.serviciosPagina)
-		r.HandleFunc("POST /servicios/desplegar", s.desplegarServicio)
-		r.HandleFunc("POST /servicios/accion", s.accionServicio)
+		r.HandleFunc("GET /servicios", s.handleServiciosGet)
+		r.HandleFunc("POST /servicios/desplegar", s.handleServiciosDesplegar)
+		r.HandleFunc("POST /servicios/accion", s.handleServiciosAccion)
 	})
 }
 
-// serviciosDatos tells the page which form the errors belong to.
-type serviciosDatos struct{ Formulario string }
-
-func (s *server) serviciosPagina(w http.ResponseWriter, r *http.Request) {
-	s.renderModule(w, r, "servicios", http.StatusOK, Form{}, serviciosDatos{})
+func formValues(v url.Values) map[string]string {
+	if len(v) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(v))
+	for k, vals := range v {
+		if len(vals) > 0 {
+			m[k] = vals[0]
+		}
+	}
+	return m
 }
 
-func (s *server) desplegarServicio(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleServiciosGet(w http.ResponseWriter, r *http.Request) {
+	apps, _ := servicios.Aplicaciones("aplicaciones")
+	s.renderModule(w, r, "servicios", http.StatusOK, Form{}, map[string]any{
+		"Aplicaciones": apps,
+	})
+}
+
+func (s *server) handleServiciosDesplegar(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error al procesar el formulario", http.StatusBadRequest)
+		return
+	}
+
+	appNombre := strings.TrimSpace(r.FormValue("aplicacion"))
+	servicioNombre := strings.TrimSpace(r.FormValue("servicio"))
+	ejecutableNombre := strings.TrimSpace(r.FormValue("ejecutable"))
+	puerto := strings.TrimSpace(r.FormValue("puerto"))
+	isOneshot := r.FormValue("oneshot") == "on"
+
+	var errApp, errServ, errExec, errPort error
+
+	if appNombre == "" {
+		errApp = &validate.Error{Field: "aplicacion", Msg: "Debes seleccionar una aplicación."}
+	}
+	errServ = servicios.ValidateName(servicioNombre)
+
+	ejecutableRuta := fmt.Sprintf("/opt/%s/%s", appNombre, ejecutableNombre)
+	if ejecutableNombre == "" {
+		errExec = &validate.Error{Field: "ejecutable", Msg: "Debes especificar el nombre del ejecutable."}
+	} else {
+		errExec = servicios.ValidateExec(ejecutableRuta)
+	}
+
+	if puerto != "" {
+		errPort = validate.Puerto(puerto)
+	}
+
+	errs := FieldErrors(errApp, errServ, errExec, errPort)
+	apps, _ := servicios.Aplicaciones("aplicaciones")
+
+	if len(errs) > 0 {
+		s.renderModule(w, r, "servicios", http.StatusUnprocessableEntity, Form{
+			Values: formValues(r.PostForm),
+			Errors: errs,
+		}, map[string]any{
+			"Formulario":   "desplegar",
+			"Aplicaciones": apps,
+		})
+		return
+	}
+
+	appLocalDir := filepath.Join("aplicaciones", appNombre)
+	var tarBuf bytes.Buffer
+	if err := servicios.Empaquetar(appLocalDir, &tarBuf); err != nil {
+		errs = FieldErrors(&validate.Error{Field: "aplicacion", Msg: fmt.Sprintf("Error empaquetando la aplicación: %v", err)})
+		s.renderModule(w, r, "servicios", http.StatusUnprocessableEntity, Form{
+			Values: formValues(r.PostForm),
+			Errors: errs,
+		}, map[string]any{
+			"Formulario":   "desplegar",
+			"Aplicaciones": apps,
+		})
+		return
+	}
+
 	cfg := servicios.Config{
-		Description: strings.TrimSpace(r.FormValue("aplicacion")),
-		Name:        strings.TrimSpace(r.FormValue("servicio")),
-		Exec:        strings.TrimSpace(r.FormValue("ejecutable")),
-		Port:        strings.TrimSpace(r.FormValue("puerto")),
+		Name:        servicioNombre,
+		Description: appNombre,
+		Exec:        ejecutableRuta,
+		Port:        puerto,
+		Oneshot:     isOneshot,
 	}
-	var errPuerto error
-	if cfg.Port != "" {
-		errPuerto = validate.Puerto(cfg.Port)
+
+	cur := s.state.Current()
+	plan := planDesplegar(cur.Name, cfg)
+
+	if tarBuf.Len() > 0 {
+		tarCmds := []executor.Command{
+			{Name: "install", Args: []string{"-d", "-m", "755", fmt.Sprintf("/opt/%s", appNombre)}},
+			{Name: "tar", Args: []string{"-xzf", "-", "-C", fmt.Sprintf("/opt/%s", appNombre), "--no-same-owner"}, Stdin: tarBuf.String()},
+			{Name: "chown", Args: []string{"-R", "root:root", fmt.Sprintf("/opt/%s", appNombre)}},
+			{Name: "chmod", Args: []string{"-R", "755", fmt.Sprintf("/opt/%s", appNombre)}},
+		}
+		cmds := make([]executor.Command, 0, len(plan.Commands)+len(tarCmds))
+		cmds = append(cmds, plan.Commands[0])
+		cmds = append(cmds, tarCmds...)
+		cmds = append(cmds, plan.Commands[1:]...)
+		plan.Commands = cmds
 	}
-	if errs := FieldErrors(servicios.ValidateDescription(cfg.Description), servicios.ValidateName(cfg.Name), servicios.ValidateExec(cfg.Exec), errPuerto); len(errs) > 0 {
-		form := Form{Values: map[string]string{"aplicacion": cfg.Description, "servicio": cfg.Name, "ejecutable": cfg.Exec, "puerto": cfg.Port}, Errors: errs}
-		s.renderModule(w, r, "servicios", http.StatusUnprocessableEntity, form, serviciosDatos{"desplegar"})
-		return
-	}
-	s.runAndShow(w, r, planDesplegar(s.state.Current().Name, cfg))
+
+	s.runAndShow(w, r, plan)
 }
 
-// planDesplegar installs the unit of a program that is already in the VM (DC6–DC8):
-// system user, data folder, unit file, daemon-reload, systemd-analyze verify, enable.
-// Copying the program from the host (DC4, DC5) is still pending: see docs/parte-c/PLAN.md.
 func planDesplegar(target string, cfg servicios.Config) operacion.Plan {
-	unitPath := "/etc/systemd/system/" + cfg.Name + ".service"
-	exists := executor.Command{Name: "test", Args: []string{"-x", cfg.Exec}}
-	user := executor.Command{Name: "sh", Args: []string{"-c", ensureUserScript, "sh", cfg.Name}}
-	data := executor.Command{Name: "install", Args: []string{"-d", "-m", "750", "-o", cfg.Name, "-g", cfg.Name, "/var/lib/" + cfg.Name}}
-	write := executor.Command{Name: "sh", Args: []string{"-c", writeUnitScript, "sh", servicios.UnitFile(cfg), unitPath}}
-	verify := executor.Command{Name: "systemd-analyze", Args: []string{"verify", unitPath}}
+	unitContent := servicios.UnitFile(cfg)
+	unitPath := fmt.Sprintf("/etc/systemd/system/%s.service", cfg.Name)
+
+	cmds := []executor.Command{
+		{Name: "test", Args: []string{"-x", cfg.Exec}},
+		{Name: "sh", Args: []string{"-c", ensureUserScript, "sh", cfg.Name}},
+		{Name: "sh", Args: []string{"-c", writeUnitScript, "sh", unitContent, unitPath}},
+		{Name: "systemctl", Args: []string{"enable", "--", cfg.Name}},
+	}
+
 	return operacion.Plan{
-		Action: "Desplegar aplicación como servicio",
-		Target: target,
-		Commands: []executor.Command{
-			exists, user, data, write,
-			{Name: "systemctl", Args: []string{"daemon-reload"}},
-			verify,
-			{Name: "systemctl", Args: []string{"enable", "--", cfg.Name}},
-		},
-		Success: func([]executor.Result) string {
-			return "El servicio «" + cfg.Name + "» quedó instalado en " + unitPath + " y habilitado al arranque. Para iniciarlo, elige «Iniciar (start)» abajo."
-		},
-		Explain: func(st oplog.Step) string {
-			switch st.Cmd {
-			case exists.String():
-				return "No existe un programa ejecutable en " + cfg.Exec + " dentro de la VM; no se cambió nada. Revisa la ruta (o los permisos: chmod 755)."
-			case verify.String():
-				return "systemd encontró errores en la unidad; quedó en " + unitPath + " pero no se habilitó. Revisa la salida de abajo."
-			}
-			return ""
-		},
+		Action:   "Desplegar servicio systemd",
+		Target:   target,
+		Commands: cmds,
 	}
 }
 
-func (s *server) accionServicio(w http.ResponseWriter, r *http.Request) {
-	name := strings.TrimSpace(r.FormValue("servicio-accion"))
-	action := r.FormValue("accion")
-	errName := validate.NombreServicio(name)
-	if errName != nil {
-		errName = &validate.Error{Field: "servicio-accion", Msg: errName.Error()}
-	}
-	var errAction error
-	switch {
-	case !servicios.Actions[action]:
-		errAction = &validate.Error{Field: "accion", Msg: "Elige una de las acciones de la lista."}
-	case errName == nil && servicios.IsProtected(name) && (action == "stop" || action == "disable"):
-		errName = &validate.Error{Field: "servicio-accion", Msg: "«" + name + "» es un servicio del que depende la VM o la consola (por ejemplo, ssh es el canal de la consola); no se puede detener ni deshabilitar desde aquí."}
-	}
-	if errs := FieldErrors(errName, errAction); len(errs) > 0 {
-		form := Form{Values: map[string]string{"servicio-accion": name, "accion": action}, Errors: errs}
-		s.renderModule(w, r, "servicios", http.StatusUnprocessableEntity, form, serviciosDatos{"accion"})
+func (s *server) handleServiciosAccion(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error al procesar el formulario", http.StatusBadRequest)
 		return
 	}
-	s.runAndShow(w, r, planAccion(s.state.Current().Name, name, action))
+
+	servicioNombre := strings.TrimSpace(r.FormValue("servicio-accion"))
+	accion := strings.TrimSpace(r.FormValue("accion"))
+
+	var errServ, errAccion error
+
+	if err := servicios.ValidateName(servicioNombre); err != nil {
+		errServ = &validate.Error{Field: "servicio-accion", Msg: err.Error()}
+	} else if servicios.IsProtected(servicioNombre) && (accion == "stop" || accion == "disable") {
+		errServ = &validate.Error{Field: "servicio-accion", Msg: fmt.Sprintf("«%s» es un servicio protegido del sistema; no se puede detener ni deshabilitar.", servicioNombre)}
+	}
+
+	if !servicios.Actions[accion] {
+		errAccion = &validate.Error{Field: "accion", Msg: "Acción no permitida."}
+	}
+
+	errs := FieldErrors(errServ, errAccion)
+	apps, _ := servicios.Aplicaciones("aplicaciones")
+
+	if len(errs) > 0 {
+		s.renderModule(w, r, "servicios", http.StatusUnprocessableEntity, Form{
+			Values: formValues(r.PostForm),
+			Errors: errs,
+		}, map[string]any{
+			"Formulario":   "accion",
+			"Aplicaciones": apps,
+		})
+		return
+	}
+
+	cur := s.state.Current()
+	plan := planAccion(cur.Name, servicioNombre, accion)
+
+	s.runAndShow(w, r, plan)
 }
 
-// planAccion runs one systemctl action. "status" exits with 3 when the service is
-// stopped: that is a state, not an error (DC9).
-func planAccion(target, name, action string) operacion.Plan {
-	args := []string{action, "--", name}
+func planAccion(target string, servicio string, accion string) operacion.Plan {
+	var cmd executor.Command
 	var alsoOK []int
-	if action == "status" {
-		args = []string{"status", "--no-pager", "--lines=20", "--", name}
+
+	if accion == "status" {
+		cmd = executor.Command{
+			Name: "systemctl",
+			Args: []string{"status", "--no-pager", "--lines=20", "--", servicio},
+		}
 		alsoOK = []int{3}
+	} else {
+		cmd = executor.Command{
+			Name: "systemctl",
+			Args: []string{accion, "--", servicio},
+		}
 	}
+
 	return operacion.Plan{
-		Action:   "Servicio: " + action + " " + name,
+		Action:   fmt.Sprintf("Acción %s en %s", accion, servicio),
 		Target:   target,
+		Commands: []executor.Command{cmd},
 		AlsoOK:   alsoOK,
-		Commands: []executor.Command{{Name: "systemctl", Args: args}},
 		Success: func(res []executor.Result) string {
-			if action == "status" {
-				if res[0].ExitCode == 3 {
-					return "«" + name + "» está detenido. El detalle está abajo."
-				}
-				return "«" + name + "» está en ejecución. El detalle está abajo."
+			if accion == "status" && len(res) > 0 && res[0].ExitCode == 3 {
+				return fmt.Sprintf("«%s» está detenido. El detalle está abajo.", servicio)
 			}
-			return "systemctl " + action + " " + name + " terminó correctamente."
-		},
-		Explain: func(st oplog.Step) string {
-			if strings.Contains(st.Stderr, "not found") || strings.Contains(st.Stderr, "could not be found") {
-				return "La VM no tiene un servicio llamado «" + name + "». Revisa el nombre."
-			}
-			return ""
+			return fmt.Sprintf("Acción «%s» completada en el servicio «%s».", accion, servicio)
 		},
 	}
 }
