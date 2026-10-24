@@ -29,7 +29,7 @@
       maxlength="255" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
       {{aria .Form "ejecutable" "ejecutable-ayuda"}}>
     {{template "error-campo" (campo .Form "ejecutable")}}
-    <p class="field-hint" id="ejecutable-ayuda">Ruta absoluta dentro de la VM objetivo, por ejemplo <span class="mono" translate="no">/usr/bin/python3</span> o <span class="mono" translate="no">/usr/local/bin/node</span>.</p>
+    <p class="field-hint" id="ejecutable-ayuda">Ruta absoluta dentro de la VM objetivo, por ejemplo <span class="mono" translate="no">/opt/bookzilla/bookzilla</span>.</p>
 
     <label class="form-label" for="puerto">Puerto de escucha (Opcional)</label>
     <input class="form-control mono" id="puerto" name="puerto" type="text" value="{{index .Form.Values "puerto"}}"
@@ -50,11 +50,11 @@
     {{if .Data}}{{if eq .Data.Formulario "accion"}}{{template "resumen-errores" $.Form}}{{end}}{{end}}
 
     <label class="form-label" for="servicio-accion">Nombre del servicio</label>
-    <input class="form-control mono" id="servicio-accion" name="servicio" type="text" value="{{index .Form.Values "servicio"}}"
+    <input class="form-control mono" id="servicio-accion" name="servicio-accion" type="text" value="{{index .Form.Values "servicio-accion"}}"
       maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
-      {{aria .Form "servicio" "servicio-accion-ayuda"}}>
-    {{template "error-campo" (campo .Form "servicio")}}
-    <p class="field-hint" id="servicio-accion-ayuda">Nombre de la unidad systemd registrada, por ejemplo <span class="mono" translate="no">cron</span> o <span class="mono" translate="no">ssh</span>.</p>
+      {{aria .Form "servicio-accion" "servicio-accion-ayuda"}}>
+    {{template "error-campo" (campo .Form "servicio-accion")}}
+    <p class="field-hint" id="servicio-accion-ayuda">Nombre de la unidad systemd registrada, por ejemplo <span class="mono" translate="no">bookzilla</span> o <span class="mono" translate="no">cron</span>.</p>
 
     <label class="form-label" for="accion">Acción a ejecutar</label>
     <select class="form-select mono" id="accion" name="accion" {{aria .Form "accion" "accion-ayuda"}}>
@@ -62,7 +62,6 @@
       <option value="start" {{if eq (index .Form.Values "accion") "start"}}selected{{end}}>Iniciar (start)</option>
       <option value="stop" {{if eq (index .Form.Values "accion") "stop"}}selected{{end}}>Detener (stop)</option>
       <option value="restart" {{if eq (index .Form.Values "accion") "restart"}}selected{{end}}>Reiniciar (restart)</option>
-      <option value="reload" {{if eq (index .Form.Values "accion") "reload"}}selected{{end}}>Recargar configuración (reload)</option>
       <option value="enable" {{if eq (index .Form.Values "accion") "enable"}}selected{{end}}>Habilitar al arranque (enable)</option>
       <option value="disable" {{if eq (index .Form.Values "accion") "disable"}}selected{{end}}>Deshabilitar del arranque (disable)</option>
     </select>
