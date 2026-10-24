@@ -136,10 +136,10 @@ docs/parte-c/                         plan, diagrama (C6) y notas
 | Fase | Objetivo | Fecha | Estado |
 |---|---|---|---|
 | C1 | Entorno de pruebas (VMs) | sáb 17 – **dom 18** (entrega al equipo) | ⬜ |
-| C2 | Desplegar una aplicación como servicio | lun 19 – mar 20 | ⬜ |
-| C3 | Botones de systemd | mar 20 | ⬜ |
-| C4 | Script de fecha y hora | mar 20 | ⬜ |
-| C5 | HAProxy: agregar y quitar servidores | mié 21 | ⬜ |
+| C2 | Desplegar una aplicación como servicio | lun 19 – mar 20 | 🟡 unidad, usuario y enable listos; falta copiar la app desde el host (DC4, DC5) |
+| C3 | Botones de systemd | mar 20 | 🟡 los 6 botones listos; falta probar en VM real |
+| C4 | Script de fecha y hora | mar 20 | ⬜ falta desplegar fecha.sh como oneshot |
+| C5 | HAProxy: agregar y quitar servidores | mié 21 | 🟡 listo con pruebas; falta probar en el balanceador real |
 | C6 | Diagrama del escenario | jue 22 | ⬜ |
 | C7 | Videos V9–V11 y sección del documento | vie 23 | ⬜ |
 

@@ -259,3 +259,74 @@ Nombre de archivo: `V<n>_<parte>_<tema>.mp4` (ej. `V6_B_llaves_root.mp4`).
 
 1. **SSH:** las precondiciones dicen que la VM ya tiene SSH instalado, pero el texto pide usar Guest Additions "antes de instalar SSH". Este plan asume: bootstrap por Guest Additions (B2) y desde ahí solo SSH.
 2. **Balanceador:** ¿"agregar un servidor" incluye crear la VM desde el disco multiconexión con `VBoxManage`, o basta con editar `haproxy.cfg`? Este plan cubre lo segundo. Si pide lo primero, se agrega una fase C7 de 2 puntos y se compensa pasando C6 (diagrama) a la Parte A.
+
+---
+
+## 8. Estado al 24 de octubre y lo que falta
+
+### 8.1 Dónde está el código
+
+Todo el trabajo está unido en la rama **`integracion`**: `dev` + `daniel` + `wiliam` + correcciones. Las 12 carpetas de pruebas pasan (`make check`).
+
+```bash
+git fetch && git switch integracion && git pull
+make check          # debe terminar sin errores antes de cualquier commit
+```
+
+Cada quien sigue en **su rama, creada desde `integracion`** (`git switch -c daniel-2 integracion`) y abre un PR hacia `integracion`. Cuando todo esté probado en VM real: `integracion` → `dev` → `main`.
+
+### 8.2 Qué se corrigió al integrar (léelo si escribiste ese código)
+
+| Dónde | Problema | Corrección |
+|---|---|---|
+| `executor/guestcontrol.go` (Daniel, "no se xd") | Usaba `runtime.GOOS` sin importar `runtime`: **nada compilaba** | Import agregado. La idea (no exigir `chmod 600` en Windows) se mantiene |
+| `web/usuarios.go` (Daniel) | Un script se armaba con `Sprintf(..., usuario)` (contradice D4) | El usuario va como argumento `$1`. Riesgo real bajo: el nombre ya estaba validado |
+| `web/balanceador.go` (Wiliam) | `currentCfg := ""`: **nunca leía `haproxy.cfg`**. "Agregar" reemplazaba el archivo por uno sin `global` ni `defaults`, y "Quitar" fallaba siempre | Lee el archivo real (`cat`) → función pura → script que valida con `haproxy -c` **antes** de reemplazar, guarda `haproxy.cfg.consola-anterior` y hace `reload` |
+| `web/servicios.go` y `web/balanceador.go` (Wiliam) | Escribían archivos con `sh -c "echo '<contenido>' > archivo"`, con datos del formulario sin validar (`ejecutable`). **Inyección de comandos**: `/x'; rm -rf / #` | El contenido viaja como argumento de un script fijo. `ejecutable`, `aplicacion` y `servicio` tienen validación |
+| `web/servicios.go` | `accion` no se comparaba contra una lista y el nombre no se validaba en esa operación | Lista cerrada de 6 acciones (DC9) y `systemctl <acción> -- <unidad>` |
+| `web/servicios.go` | Volver a desplegar fallaba porque `useradd` choca con el usuario existente | Crea el usuario solo si no existe. Además: `test -x` del ejecutable y `systemd-analyze verify` (DC8) |
+| Plantillas vs. manejadores | Las plantillas enviaban `servicio` y `backend`, pero los manejadores leían `nombre`: **ningún formulario de C funcionaba** | Manejadores alineados con las plantillas. Los formularios repetidos usan nombres propios (`backend-quitar`, `ip-quitar`, `servicio-accion`) para que los errores y los `id` no se crucen |
+| `servicios.html` | Tenía `reload`, que no está entre las 6 acciones del enunciado | Opción quitada |
+| Parte C sin pruebas | — | `balanceador/haproxy_test.go`, `servicios/unit_test.go` y `web/parte_c_test.go` (incluye el script de HAProxy ejecutado de verdad en un shell) |
+
+Modelo del balanceador (el de la plantilla de Wiliam): el usuario escribe **back-end + IP + puerto**. El back-end **debe existir** en `haproxy.cfg`; si no existe, el mensaje lista los que hay. El servidor se nombra solo: `srv-<ip>-<puerto>`. "Quitar" recibe back-end + IP y se niega a quitar el último servidor, porque HAProxy respondería 503 a todo.
+
+### 8.3 Lo que falta, por persona
+
+Regla para cerrar cada punto: `make check` en verde + **prueba en VM real con antes → acción → después** + commit.
+
+#### Daniel (Parte B): todo tiene código y pruebas; falta la VM real, los videos y el documento
+
+| # | Tarea | Cómo verificar |
+|---|---|---|
+| B-1 | Probar el flujo completo en VM real, desde el snapshot `guest-additions-ok` de `consola-pruebas` | Arranca la consola: el destino aparece con canal **Guest Additions**. Haz el bootstrap: el canal pasa a **SSH**. En la VM: `cat /root/.ssh/authorized_keys` muestra la llave de la consola |
+| B-2 | Llaves de root (V6) | Generar → descargar la privada (una sola vez). Desde el host: `ssh -i <llave> root@<ip>` entra; `ssh -o PubkeyAuthentication=no root@<ip>` es **rechazado** |
+| B-3 | Crear usuario con sudo y llave (V7) | En la VM: `id <u>` muestra el grupo `sudo`; entra con su llave; con contraseña es rechazado; `sshd -T -C user=<u>,host=x,addr=127.0.0.1 \| grep passwordauth` → `no` |
+| B-4 | Eliminar usuario con y sin archivos (V8) | `getent passwd <u>` vacío; `/home/<u>` existe o no según la casilla; desaparece `/etc/ssh/sshd_config.d/20-consola-<u>.conf` |
+| B-5 | Guion de videos V5–V8 | Copiar el formato de `docs/parte-a/guion-videos.md` |
+| B-6 | **B7: consolidar el documento** (lo más urgente de la entrega) | Juntar las secciones de A, B y C con el formato del enunciado: solución y decisiones (§2 de este plan + DA/DB/DC), pruebas y resultados (tabla de videos), problemas y soluciones (la tabla 8.2 sirve), referencias, uso de IA |
+
+#### Wiliam (Parte C): servicios y balanceador funcionan con pruebas; falta copiar la app, el script de fecha y la VM real
+
+| # | Tarea | Detalle | Cómo verificar |
+|---|---|---|---|
+| C-1 | Copiar la app desde el host (DC4, DC5) | Hoy "Desplegar" instala la unidad de un programa **que ya está en la VM**. Falta:<br>1. En `internal/servicios/paquete.go`, una función pura que empaquete `aplicaciones/<nombre>/` en `.tar.gz` (`archive/tar` + `compress/gzip`), con prueba de tabla.<br>2. En `planDesplegar` (`internal/web/servicios.go`), **antes** de `test -x`: `CopyTo` a `/tmp/consola-<app>.tar.gz` → `install -d -m 755 /opt/<app>` → `tar -xzf … -C /opt/<app> --no-same-owner` → `chown -R root:root /opt/<app>` → `rm -f` del `.tar.gz`.<br>3. En el formulario, cambiar "Ruta del ejecutable" por una **lista** de las carpetas de `aplicaciones/` y el nombre del ejecutable; la ruta queda `/opt/<app>/<ejecutable>`.<br>4. Agregar `aplicaciones/` a `.gitignore` | En la VM: `ls -l /opt/bookzilla` (propiedad de root); `systemctl status bookzilla` corriendo como el usuario `bookzilla`; `curl localhost:<puerto>` responde |
+| C-2 | Script de fecha como oneshot (C4, DC11) | Casilla "Tarea única (oneshot)" en el formulario → `Config.Oneshot = true` (ya existe y tiene prueba). Desplegar `deploy/fecha/fecha.sh` con el mismo camino de C-1 | `systemctl start fecha` dos veces → `tail /var/log/consola-fecha.log` muestra dos líneas |
+| C-3 | Probar los 6 botones en VM real (V10) | Con Bookzilla desplegado: start, status (en ejecución), stop, status (detenido: **no** es error), restart, enable, disable | `systemctl is-enabled bookzilla` cambia; `stop` sobre `ssh` es **rechazado** junto al campo |
+| C-4 | Probar el balanceador real (V11) | Destino `balanceador`. `haproxy.cfg` debe tener un `backend` (el del lab de balanceo). Agregar `servidor3` → quitarlo | En la VM: `grep server /etc/haproxy/haproxy.cfg`; `curl` repetido a la IP del balanceador muestra el reparto; existe `haproxy.cfg.consola-anterior` |
+| C-5 | (Opcional) Lista desplegable de back-ends | En `balanceadorPagina`, leer `haproxy.cfg` y mostrar `balanceador.Backends(cfg)` en un `<select>` | — |
+| C-6 | Diagrama (C6), videos V9–V11 y sección del documento (C7) | Entregar la sección a Daniel para B7 | — |
+
+#### Cristhian (Parte A)
+
+| # | Tarea | Cómo verificar |
+|---|---|---|
+| A-1 | F8: grabar V1–V4 con `docs/parte-a/guion-videos.md` | Cuatro archivos `V<n>_A_<tema>.mp4` |
+| A-2 | Sección de la Parte A para el documento → Daniel | — |
+| A-3 | Revisar los PR de Daniel y Wiliam hacia `integracion` y hacer los merge a `dev` y `main` | `make check` en verde en cada merge |
+
+### 8.4 Limitaciones conocidas (decirlas en el documento si no se alcanzan)
+
+- No se probó **nada de B ni de C contra una VM real** durante la integración: solo pruebas automáticas con el canal simulado.
+- Mientras no exista C-1, "Desplegar" no copia la aplicación desde el host.
+- "Quitar servidor" quita **todos** los servidores de ese back-end que tengan esa IP (por ejemplo, la misma VM en dos puertos).
