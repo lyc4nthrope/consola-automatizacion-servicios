@@ -161,3 +161,62 @@ func PlanEliminar(target, usuario string, borrarArchivos bool) operacion.Plan {
 		},
 	}
 }
+
+// PlanEditar builds the user edit operations: optional password change via
+// chpasswd (the only place a password may travel, per DB12), optional sudo
+// membership toggle via usermod/gpasswd. The SSH key flow is a separate
+// operation that the handler chains when the checkbox is on.
+func PlanEditar(target, usuario, nuevaContrasena string, sudo bool) operacion.Plan {
+	var comandos []executor.Command
+
+	if nuevaContrasena != "" {
+		comandos = append(comandos, executor.Command{
+			Name:  "chpasswd",
+			Stdin: usuario + ":" + nuevaContrasena,
+		})
+	}
+
+	if sudo {
+		comandos = append(comandos, executor.Command{
+			Name: "usermod",
+			Args: []string{"-aG", "sudo", "--", usuario},
+		})
+	} else {
+		comandos = append(comandos, executor.Command{
+			Name: "gpasswd",
+			Args: []string{"-d", usuario, "sudo"},
+		})
+	}
+
+	return operacion.Plan{
+		Action:   "Editar la cuenta de usuario",
+		Target:   target,
+		Commands: comandos,
+		Success: func(res []executor.Result) string {
+			var partes []string
+			if nuevaContrasena != "" {
+				partes = append(partes, "la contraseña se actualizó")
+			}
+			if sudo {
+				partes = append(partes, "se activó sudo")
+			} else {
+				partes = append(partes, "se desactivó sudo")
+			}
+			if len(partes) == 0 {
+				return "No hubo cambios que aplicar."
+			}
+			return "Cuenta actualizada: " + strings.Join(partes, ", ") + "."
+		},
+		Explain: func(step oplog.Step) string {
+			switch {
+			case step.Cmd == "chpasswd" && step.ExitCode != 0:
+				return "Error al cambiar la contraseña: revisa la salida de abajo."
+			case step.Cmd == "usermod" && step.ExitCode != 0:
+				return "Error al activar sudo: revisa la salida de abajo."
+			case step.Cmd == "gpasswd" && step.ExitCode != 0:
+				return "Error al desactivar sudo: revisa la salida de abajo."
+			}
+			return ""
+		},
+	}
+}

@@ -46,6 +46,41 @@
   </form>
 </section>
 
+<section class="block" aria-labelledby="editar-titulo">
+  <h2 id="editar-titulo" class="block-title">Editar usuario</h2>
+  {{if eq .Data.Formulario "editar"}}
+  <form class="panel-c form-c" method="post" action="/usuarios/editar" data-operacion="Editar la cuenta de usuario" novalidate>
+    {{template "resumen-errores" .Form}}
+    <p class="field-hint">Edita la cuenta en la VM. Deja la contraseña vacía si no quieres cambiarla. Si marcas «Generar llave SSH», se regenerará el par de llaves (la anterior dejará de funcionar) y podrás descargar la nueva llave privada una sola vez durante 15 minutos.</p>
+    <input type="hidden" name="usuario" value="{{index .Form.Values "usuario"}}">
+    <label class="form-label" for="usuario">Nombre de usuario</label>
+    <input class="form-control" type="text" id="usuario" name="usuario" value="{{index .Form.Values "usuario"}}" readonly aria-describedby="usuario-ayuda">
+    <p class="field-hint" id="usuario-ayuda">El nombre no se puede cambiar.</p>
+
+    <label class="form-label" for="nuevaContrasena">Nueva contraseña (opcional)</label>
+    <input class="form-control" type="password" id="nuevaContrasena" name="nuevaContrasena" autocomplete="new-password" {{aria .Form "nuevaContrasena" "contrasena-ayuda"}}>
+    {{template "error-campo" (campo .Form "nuevaContrasena")}}
+    <p class="field-hint" id="contrasena-ayuda">Entre 8 y 128 caracteres, sin «:» y sin saltos de línea. Déjalo vacío para no cambiarla.</p>
+
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="sudo" name="sudo" value="on"{{if index .Form.Values "sudo"}} checked{{end}}>
+      <label class="form-check-label" for="sudo">Asignar privilegios de sudo</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="llave" name="llave" value="on"{{if index .Form.Values "llave"}} checked{{end}}>
+      <label class="form-check-label" for="llave">Generar/regenerar llave SSH</label>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-pencil" aria-hidden="true"></i> Guardar cambios</button>
+      <a class="btn btn-outline" href="/usuarios">Cancelar</a>
+    </div>
+  </form>
+  {{else}}
+  <p class="field-hint">Selecciona un usuario en la sección «Eliminar usuario» y pulsa «Editar» para modificar su contraseña, sudo o llave SSH.</p>
+  {{end}}
+</section>
+
 <section class="block" aria-labelledby="eliminar-titulo">
   <h2 id="eliminar-titulo" class="block-title">Eliminar usuario</h2>
   {{if .Data.Confirmar}}
@@ -78,6 +113,7 @@
     </div>
     <div class="form-actions">
       <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Continuar</button>
+      <button class="btn btn-outline" type="button" id="btnEditar" onclick="location.href='/usuarios/editar?usuario='+document.getElementById('eliminar').value"><i class="bi bi-pencil" aria-hidden="true"></i> Editar</button>
     </div>
     {{end}}
   </form>

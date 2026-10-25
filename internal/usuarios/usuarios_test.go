@@ -187,10 +187,96 @@ func TestPlanEliminar(t *testing.T) {
 		}
 		// reload
 		if p.Commands[3].Name != "systemctl" || strings.Join(p.Commands[3].Args, "|") != "reload|ssh" {
-			t.Errorf("%s: systemctl reload missing: %v", tc.nombre, p.Commands[3].Args)
+t.Errorf("%s: systemctl reload missing: %v", tc.nombre, p.Commands[3].Args)
 		}
 		if len(p.Commands) != 4 {
 			t.Errorf("%s: want 4 commands, got %d", tc.nombre, len(p.Commands))
 		}
 	}
 }
+
+// PlanEditar builds chpasswd (if new password), usermod/gpasswd for sudo toggle.
+func TestPlanEditar(t *testing.T) {
+	casos := []struct {
+		nombre          string
+		nuevaContrasena string
+		sudo            bool
+		wantCmds        []executor.Command
+	}{
+		{
+			nombre:          "solo contraseña (sudo=false -> quita sudo)",
+			nuevaContrasena: "NuevaClave-2026",
+			sudo:            false,
+			wantCmds: []executor.Command{
+				{Name: "chpasswd", Stdin: "daniel:NuevaClave-2026"},
+				{Name: "gpasswd", Args: []string{"-d", "daniel", "sudo"}},
+			},
+		},
+		{
+			nombre:          "activar sudo",
+			nuevaContrasena: "",
+			sudo:            true,
+			wantCmds: []executor.Command{
+				{Name: "usermod", Args: []string{"-aG", "sudo", "--", "daniel"}},
+			},
+		},
+		{
+			nombre:          "desactivar sudo",
+			nuevaContrasena: "",
+			sudo:            false,
+			wantCmds: []executor.Command{
+				{Name: "gpasswd", Args: []string{"-d", "daniel", "sudo"}},
+			},
+		},
+		{
+			nombre:          "contraseña + activar sudo",
+			nuevaContrasena: "OtraClave-2026",
+			sudo:            true,
+			wantCmds: []executor.Command{
+				{Name: "chpasswd", Stdin: "daniel:OtraClave-2026"},
+				{Name: "usermod", Args: []string{"-aG", "sudo", "--", "daniel"}},
+			},
+		},
+		{
+			nombre:          "contraseña + desactivar sudo",
+			nuevaContrasena: "OtraClave-2026",
+			sudo:            false,
+			wantCmds: []executor.Command{
+				{Name: "chpasswd", Stdin: "daniel:OtraClave-2026"},
+				{Name: "gpasswd", Args: []string{"-d", "daniel", "sudo"}},
+			},
+		},
+	}
+	for _, tc := range casos {
+		p := PlanEditar("pruebas", "daniel", tc.nuevaContrasena, tc.sudo)
+		if p.Action != "Editar la cuenta de usuario" || p.Target != "pruebas" {
+			t.Fatalf("%s: action/target = %+v", tc.nombre, p)
+		}
+		if !sameCommands(p.Commands, tc.wantCmds) {
+			t.Errorf("%s: comandos = %+v, want %+v", tc.nombre, p.Commands, tc.wantCmds)
+		}
+		if p.Success == nil {
+			t.Errorf("%s: falta Success", tc.nombre)
+		}
+		if p.Explain == nil {
+			t.Errorf("%s: falta Explain", tc.nombre)
+		}
+	}
+}
+
+// La contraseña viaja SOLO en el Stdin de chpasswd.
+func TestPlanEditarLaContraseñaSoloVaEnStdin(t *testing.T) {
+	const contrasena = "ClaveSecreta-2026"
+	p := PlanEditar("pruebas", "daniel", contrasena, true)
+	for _, c := range p.Commands {
+		if strings.Contains(c.String(), contrasena) {
+			t.Errorf("el comando %s filtra la contraseña en su línea", c.String())
+		}
+		if c.Name == "chpasswd" && c.Stdin != "daniel:"+contrasena {
+			t.Errorf("chpasswd.Stdin = %q", c.Stdin)
+		}
+	}
+}
+
+// interface check para PlanEditar
+var _ operacion.Plan = PlanEditar("t", "u", "p", false)

@@ -42,6 +42,8 @@ import (
 func init() {
 	registerModule("usuarios", func(s *server, r *ModuleRouter) {
 		r.HandleFunc("GET /usuarios", s.usuariosPagina)
+		r.HandleFunc("GET /usuarios/editar", s.usuarioEditarGET)
+		r.HandleFunc("POST /usuarios/editar", s.usuarioEditarPOST)
 		r.HandleFunc("POST /usuarios/conectar-ssh", s.conectarSSH)
 		r.HandleFunc("POST /usuarios/crear", s.usuarioCrear)
 		r.HandleFunc("POST /usuarios/eliminar", s.usuarioEliminar)
@@ -907,6 +909,237 @@ func (s *server) usuarioEliminar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/resultado/"+e.ID, http.StatusSeeOther)
+}
+
+// usuarioEditarGET shows the edit form for an existing user. It reads the
+// user from the query string, verifies the user exists and is editable,
+// and renders the edit form with the current sudo status.
+func (s *server) usuarioEditarGET(w http.ResponseWriter, r *http.Request) {
+	cur := s.state.Current()
+	datos := usuariosDatos{Canal: s.state.Channel(cur.Name)}
+	mostrar := func(estado int, form Form) {
+		s.renderModule(w, r, "usuarios", estado, form, datos)
+	}
+	ex, hayCanal := s.state.Executor(cur.Name)
+	if !hayCanal || ex.Name() != "SSH" {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "Para editar un usuario, la VM ya debe estar conectada por SSH: primero usa «Conectar por SSH»."}})
+		return
+	}
+	usuario := strings.TrimSpace(r.URL.Query().Get("usuario"))
+	if usuario == "" {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"usuario": "Falta el parámetro usuario."}})
+		return
+	}
+	if err := validate.Usuario(usuario); err != nil {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"usuario": err.Error()}})
+		return
+	}
+	if protegidosDe(cur)[usuario] {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"usuario": "No se puede editar la cuenta «" + usuario + "»: la consola la necesita para seguir administrando la VM."}})
+		return
+	}
+	// Verificar que el usuario existe
+	res, err := ex.Run(r.Context(), executor.Command{Name: "getent", Args: []string{"passwd", usuario}})
+	if err != nil || res.ExitCode != 0 {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"usuario": "El usuario no existe en la VM."}})
+		return
+	}
+	// Leer estado actual de sudo
+	sudoActual := false
+	resGrupos, err := ex.Run(r.Context(), executor.Command{Name: "groups", Args: []string{usuario}})
+	if err == nil && resGrupos.ExitCode == 0 {
+		sudoActual = strings.Contains(resGrupos.Stdout, "sudo")
+	}
+	form := Form{
+		Values: map[string]string{
+			"usuario":      usuario,
+			"sudo":         boolToOn(sudoActual),
+			"nuevaContrasena": "",
+			"llave":        "off",
+		},
+	}
+	mostrar(http.StatusOK, form)
+}
+
+func boolToOn(b bool) string {
+	if b {
+		return "on"
+	}
+	return ""
+}
+
+// usuarioEditarPOST processes the edit form for an existing user. It validates
+// the form, runs PlanEditar for password/sudo changes, and if the llave
+// checkbox is on, chains the SSH key generation flow (same as usuarioCrear).
+func (s *server) usuarioEditarPOST(w http.ResponseWriter, r *http.Request) {
+	cur := s.state.Current()
+	datos := usuariosDatos{Canal: s.state.Channel(cur.Name)}
+	mostrar := func(estado int, form Form) {
+		s.renderModule(w, r, "usuarios", estado, form, datos)
+	}
+	ex, hayCanal := s.state.Executor(cur.Name)
+	if !hayCanal || ex.Name() != "SSH" {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "Para editar un usuario, la VM ya debe estar conectada por SSH: primero usa «Conectar por SSH»."}})
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "No se pudo leer el formulario. Vuelve a intentarlo."}})
+		return
+	}
+	usuario := strings.TrimSpace(r.PostForm.Get("usuario"))
+	nuevaContrasena := r.PostForm.Get("nuevaContrasena")
+	sudo := r.PostForm.Get("sudo") != ""
+	llave := r.PostForm.Get("llave") != ""
+
+	if err := validate.Usuario(usuario); err != nil {
+		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario, "sudo": boolToOn(sudo)}, Errors: FieldErrors(err)})
+		return
+	}
+	if protegidosDe(cur)[usuario] {
+		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario}, Errors: map[string]string{"usuario": "No se puede editar la cuenta «" + usuario + "»: la consola la necesita para seguir administrando la VM."}})
+		return
+	}
+	if nuevaContrasena != "" {
+		if err := validate.Contrasena(nuevaContrasena); err != nil {
+			mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario, "sudo": boolToOn(sudo)}, Errors: FieldErrors(err)})
+			return
+		}
+	}
+
+	// Verificar que el usuario existe
+	res, err := ex.Run(r.Context(), executor.Command{Name: "getent", Args: []string{"passwd", usuario}})
+	if err != nil || res.ExitCode != 0 {
+		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario}, Errors: map[string]string{"usuario": "El usuario no existe en la VM."}})
+		return
+	}
+
+	// Paso 1: PlanEditar (contraseña y sudo)
+	eA, pudoA, escrito := s.runPaso(w, r, usuarios.PlanEditar(cur.Name, usuario, nuevaContrasena, sudo))
+	if escrito {
+		return
+	}
+	if !pudoA {
+		s.porFallo(w, r, cur.Name, "", eA, true, "", operacion.Plan{})
+		return
+	}
+
+	// Paso 2: Si se pidió llave, ejecutar el flujo de generación/instalación
+	if !llave {
+		http.Redirect(w, r, "/resultado/"+eA.ID, http.StatusSeeOther)
+		return
+	}
+
+	token, errToken := llaves.NewDownloadToken()
+	if errToken != nil {
+		mostrar(http.StatusInternalServerError, Form{Errors: map[string]string{"": errToken.Error()}})
+		return
+	}
+	rutaPrivada, errPreparada := llaves.PrepareDownload(token)
+	if errPreparada != nil {
+		mostrar(http.StatusInternalServerError, Form{Errors: map[string]string{"": errPreparada.Error()}})
+		return
+	}
+
+	dirTemporal := ""
+	eB, pudoB, escritoB := s.runPaso(w, r, planGenerarLlaves("Generar las llaves del usuario", cur.Name, usuario, &dirTemporal))
+	if escritoB {
+		return
+	}
+	if !pudoB {
+		s.porFallo(w, r, cur.Name, dirTemporal, eB, true, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+
+	rutaPublica, errPub := os.CreateTemp("", "consola-usuario-pub-*")
+	if errPub != nil {
+		e, guardado := s.copiaFallida("Traer la llave pública del usuario", cur.Name, ex.Name(), fmt.Errorf("No se pudo preparar el archivo local de la llave pública: %w.", errPub))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+	defer os.Remove(rutaPublica.Name())
+	rutaPublica.Close()
+	if err := ex.CopyFrom(r.Context(), dirTemporal+"/id_ed25519.pub", rutaPublica.Name()); err != nil {
+		e, guardado := s.copiaFallida("Traer la llave pública del usuario", cur.Name, ex.Name(), fmt.Errorf("La llave pública (id_ed25519.pub) no se copió de la VM a la consola: %w. El temporal de la VM se borra igual; vuelve a intentarlo.", err))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+	pubUsuario, errLeer := os.ReadFile(rutaPublica.Name())
+	if errLeer != nil {
+		e, guardado := s.copiaFallida("Traer la llave pública del usuario", cur.Name, ex.Name(), fmt.Errorf("La llave pública llegó pero no se pudo leer en la consola: %w. El temporal de la VM se borra igual; vuelve a intentarlo.", errLeer))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+
+	eC, pudoC, escritoC := s.runPaso(w, r, planInstalarLlaves("Instalar la llave del usuario", cur.Name, rutaLlavesDe(usuario), strings.TrimSpace(string(pubUsuario)),
+		"La llave pública del usuario quedó instalada en "+rutaLlavesDe(usuario)+" de la VM, con dueño "+usuario+":"+usuario+". Ahora la consola deja la configuración del sshd lista para que este usuario entre solo con llaves, recarga el servicio y borra los temporales.",
+		usuario+":"+usuario,
+		func(leer executor.Command, instalar *executor.Command) func(st oplog.Step) string {
+			return func(st oplog.Step) string {
+				switch {
+				case st.Cmd == leer.String():
+					return "No se pudo leer " + rutaLlavesDe(usuario) + " en la VM, así que no se cambió nada. Revisa la salida de abajo."
+				case st.Cmd == instalar.String() && st.ExitCode == fileChangedCode:
+					return rutaLlavesDe(usuario) + " cambió mientras se preparaba la llave; no se escribió nada. Vuelve a intentarlo."
+				case st.Cmd == instalar.String():
+					return "No se pudo instalar la llave del usuario en " + rutaLlavesDe(usuario) + ", así que no se cambió nada. Revisa la salida de abajo."
+				case strings.HasPrefix(st.Cmd, "chown "):
+					return "La llave quedó instalada, pero la consola no pudo darle el dueño " + usuario + ":" + usuario + " (ni a su carpeta .ssh). Vuelve a intentarlo: la operación es repetible y terminará de ponerlo bien."
+				}
+				return ""
+			}
+		}))
+	if escritoC {
+		return
+	}
+	if !pudoC {
+		s.porFallo(w, r, cur.Name, dirTemporal, eC, true, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+
+	rutaDropIn, errDrop := os.CreateTemp("", "consola-dropin-usuario-*")
+	if errDrop != nil {
+		e, guardado := s.copiaFallida("Subir el drop-in del usuario", cur.Name, ex.Name(), fmt.Errorf("No se pudo preparar el archivo local del drop-in %s: %w.", llaves.NombreDropInUsuario(usuario), errDrop))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+	defer os.Remove(rutaDropIn.Name())
+	if err := os.WriteFile(rutaDropIn.Name(), []byte(llaves.ContenidoDropInUsuario(usuario)), 0o644); err != nil {
+		e, guardado := s.copiaFallida("Subir el drop-in del usuario", cur.Name, ex.Name(), fmt.Errorf("No se pudo escribir el drop-in %s en la consola: %w.", llaves.NombreDropInUsuario(usuario), err))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+	rutaDropIn.Close()
+	if err := ex.CopyTo(r.Context(), rutaDropIn.Name(), dropInTemporalUsuario(usuario)); err != nil {
+		e, guardado := s.copiaFallida("Subir el drop-in del usuario", cur.Name, ex.Name(), fmt.Errorf("El drop-in %s no se pudo subir a la VM: %w. No se cambió nada ahí; vuelve a intentarlo.", llaves.NombreDropInUsuario(usuario), err))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+
+	eD, pudoD, escritoD := s.runPaso(w, r, planConfigurarSSHUsuario(cur.Name, usuario))
+	if escritoD {
+		return
+	}
+	if !pudoD {
+		s.porFallo(w, r, cur.Name, dirTemporal, eD, true, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+
+	if err := ex.CopyFrom(r.Context(), dirTemporal+"/id_ed25519", rutaPrivada); err != nil {
+		e, guardado := s.copiaFallida("Traer la llave privada", cur.Name, ex.Name(), fmt.Errorf("Las llaves del usuario quedaron instaladas en la VM, pero la privada (id_ed25519) no se pudo traer a la consola: %w. El temporal de la VM se borra igual; vuelve a intentarlo, la operación es repetible.", err))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+	if err := os.Chmod(rutaPrivada, 0o600); err != nil {
+		e, guardado := s.copiaFallida("Traer la llave privada", cur.Name, ex.Name(), fmt.Errorf("La llave privada llegó a la consola pero no se pudo fijar el permiso 600: %w. Se descarta la copia; vuelve a intentarlo.", err))
+		s.porFallo(w, r, cur.Name, dirTemporal, e, guardado, rutaPrivada, limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario))
+		return
+	}
+
+	if _, err := s.runner.Run(r.Context(), limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario)); err != nil && limpiezaLlavesUsuario(cur.Name, dirTemporal, usuario).Target != "" {
+		log.Printf("%s: %v", "Borrar los temporales de las llaves del usuario", err)
+	}
+
+http.Redirect(w, r, "/usuarios/llaves/listo/"+token+"?id="+eD.ID, http.StatusSeeOther)
 }
 
 // llaveLista is the page the browser lands on after the flow: it offers the
