@@ -112,11 +112,64 @@
       <label class="form-check-label" for="archivos">Eliminar todos los archivos</label>
     </div>
     <div class="form-actions">
-      <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Continuar</button>
-      <button class="btn btn-outline" type="button" id="btnEditar" onclick="location.href='/usuarios/editar?usuario='+document.getElementById('eliminar').value"><i class="bi bi-pencil" aria-hidden="true"></i> Editar</button>
+      <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Eliminar</button>
+      <button class="btn btn-outline" type="button" id="btnEditar" onclick="irAEditar()"><i class="bi bi-pencil" aria-hidden="true"></i> Editar</button>
     </div>
     {{end}}
   </form>
   {{end}}
 </section>
 {{end}}
+
+<script>
+function irAEditar() {
+  var select = document.getElementById('eliminar');
+  var usuario = select.value;
+  if (!usuario) {
+    alert('Selecciona un usuario primero.');
+    return;
+  }
+  window.location.href = '/usuarios/editar?usuario=' + encodeURIComponent(usuario);
+}
+
+function confirmarEliminacion(event) {
+  event.preventDefault();
+  var select = document.getElementById('eliminar');
+  var usuario = select.value;
+  if (!usuario) {
+    alert('Selecciona un usuario primero.');
+    return;
+  }
+  var archivos = document.getElementById('archivos').checked;
+  var mensaje = '¿Eliminar a ' + usuario + '? Esta acción no se puede deshacer.';
+  if (archivos) {
+    mensaje += ' También se borrarán su carpeta /home/' + usuario + ' y sus archivos.';
+  }
+  if (confirm(mensaje)) {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/usuarios/eliminar';
+    var inputUsuario = document.createElement('input');
+    inputUsuario.type = 'hidden';
+    inputUsuario.name = 'usuario';
+    inputUsuario.value = usuario;
+    form.appendChild(inputUsuario);
+    if (archivos) {
+      var inputArchivos = document.createElement('input');
+      inputArchivos.type = 'hidden';
+      inputArchivos.name = 'archivos';
+      inputArchivos.value = 'on';
+      form.appendChild(inputArchivos);
+    }
+    document.body.appendChild(form);
+    form.submit();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var btnEliminar = document.querySelector('form[action="/usuarios"] button[type="submit"]');
+  if (btnEliminar && btnEliminar.form.action.includes('/usuarios') && !btnEliminar.form.action.includes('editar')) {
+    btnEliminar.form.addEventListener('submit', confirmarEliminacion);
+  }
+});
+</script>
