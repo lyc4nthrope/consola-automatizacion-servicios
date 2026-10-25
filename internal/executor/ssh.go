@@ -40,7 +40,12 @@ func (s *SSH) Run(ctx context.Context, c Command) (Result, error) {
 	res := Result{Cmd: c.String(), Stdout: out, Stderr: errOut, ExitCode: code, Duration: time.Since(start)}
 	switch {
 	case runErr != nil:
-		return res, s.channelError(errOut, runErr)
+		// Solo el código 255 es fallo de transporte SSH; el resto son códigos del comando remoto.
+		if code == 255 {
+			return res, s.channelError(errOut, runErr)
+		}
+		// Código ≠ 255 → comando remoto falló, pero el canal SSH funcionó: devolvemos el Result normal.
+		return res, nil
 	case code == 255:
 		return res, s.channelError(errOut, nil)
 	default:
