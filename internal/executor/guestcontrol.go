@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"runtime"
 	"time"
 )
 
@@ -182,7 +183,9 @@ func (g *GuestControl) checkPasswordFile() error {
 	if err != nil || !st.Mode().IsRegular() {
 		return &ChannelError{Msg: fmt.Sprintf("No se encontró el archivo con la contraseña de Guest Additions (%s); créalo con permisos 600 como indica el README (sección Configurar)", g.PasswordFile), Err: err}
 	}
-	if st.Mode().Perm()&0o077 != 0 {
+	// Windows has no POSIX permission bits: Go reports 0666 for any regular file, so this
+	// check can never pass there (and chmod does not exist). Access is governed by NTFS ACLs.
+	if runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
 		return &ChannelError{Msg: fmt.Sprintf("El archivo de contraseña %s lo pueden leer otros usuarios; corrígelo con: chmod 600 %s", g.PasswordFile, g.PasswordFile)}
 	}
 	return nil

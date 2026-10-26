@@ -122,6 +122,9 @@
 
   <script src="/static/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
   <script src="/static/js/consola.js"></script>
+  {{- if eq .Active "usuarios"}}
+  <script src="/static/js/usuarios.js"></script>
+  {{- end}}
 </body>
 </html>
 {{- end}}

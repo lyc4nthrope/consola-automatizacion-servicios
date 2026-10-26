@@ -1,0 +1,10 @@
+{{define "llaves-root"}}{{- if eq .Channel "SSH"}}<form class="panel-c form-c" method="post" action="/usuarios/llaves-root" data-operacion="Generar llaves de root" novalidate>
+    {{if eq .Data.Formulario "llaves-root"}}{{template "resumen-errores" .Form}}{{end}}
+    <p>La VM genera un par de llaves nuevo para el usuario root: la pública se autoriza en la VM (junto a las llaves que ya tenga) y la privada se guarda una sola vez para descargarla aquí al terminar. Como parte del mismo paso, la consola deja el sshd de la VM listo para que root entre <strong>solo con llaves</strong> y recarga el servicio.</p>
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-key-fill" aria-hidden="true"></i> Generar llaves de root</button>
+    </div>
+  </form>{{- else}}
+  {{if eq .Data.Formulario "llaves-root"}}{{template "resumen-errores" .Form}}{{end}}
+  <p class="field-hint">Para generar las llaves de root, la VM ya debe verse por SSH (eso es lo que usa la consola para generar e instalar): enchufa primero en <a href="/usuarios">Gestión de usuarios</a> el botón «Conectar por SSH» y vuelve aquí.</p>
+  {{- end}}{{end}}
