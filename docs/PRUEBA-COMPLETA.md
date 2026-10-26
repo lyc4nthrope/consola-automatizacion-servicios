@@ -54,6 +54,6 @@ Rama `fix/despliegue-servicios` (después unida a `main`), VM `consola-pruebas` 
 
 ## Límites de esta prueba
 
-- La VM `balanceador` (192.168.40.53) **no se pudo usar**: no tiene la llave de la consola, sus Guest Additions son 6.0 (no responden con VirtualBox 7.2) y no hay archivo de contraseña para ella en `keys/`. HAProxy se probó en `consola-pruebas`. Para usar esa VM: instalar Guest Additions 7.2 y crear `keys/guest-pass-balanceador`, o agregar `keys/consola_ed25519.pub` a su `/root/.ssh/authorized_keys`.
+- El script prueba HAProxy en `consola-pruebas`. La VM `balanceador` (192.168.40.53) se probó aparte el 26 de octubre: agregar y quitar `192.168.40.57:8080` en `http_back` funcionó, y el puerto 80 entregó Bookzilla. Para que la consola entre a esa VM, su `/root/.ssh/authorized_keys` debe tener `keys/consola_ed25519.pub` (sus Guest Additions 6.0 no responden con VirtualBox 7.2). Sus servidores del laboratorio (`servidor1`–`servidor3`, `.50`–`.52:8000`) deben estar encendidos: sus líneas no tienen `check` y HAProxy les envía peticiones aunque estén apagados.
 - La consola **no crea VMs** desde el disco multiconexión `base-webapp.vdi`: «Agregar servidor» edita `haproxy.cfg` (duda abierta en el §7 del plan general).
 - No se reinicia la VM, así que «enable sobrevive a un reinicio» no se comprueba aquí.

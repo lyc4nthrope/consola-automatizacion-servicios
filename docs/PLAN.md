@@ -352,11 +352,11 @@ Todas las ramas (`cristhian`, `daniel`, `wiliam`, `wiliam-final`, `integracion`,
 | B4 Crear usuario | ✅ | Video B; prueba completa (sudo, llave, `passwordauthentication no`). `sudo -l` no se comprueba |
 | B5 Eliminar usuario | ✅ | Video B; prueba completa (con y sin archivos, drop-in borrado, root protegido) |
 | B6 Documento consolidado | ✅ con correcciones pendientes | `Parcial 2 - Automatización de servicios.docx`: ver «Pendientes» |
-| C1 Entorno de pruebas | ⚠️ | `consola-pruebas` lista. La VM `balanceador` no es accesible desde la consola (ver «Pendientes») |
+| C1 Entorno de pruebas | ✅ | `consola-pruebas` y `balanceador` responden por SSH (la llave se instaló en el balanceador el 26) |
 | C2 Desplegar app como servicio | ✅ desde el 26 | El primer despliegue fallaba siempre (`test -x` antes de extraer); corregido y probado con el Bookzilla real |
 | C3 Seis botones de systemd | ✅ | Prueba completa: los 6 y `stop` sobre `ssh` rechazado. «enable sobrevive a un reinicio» no se probó |
 | C4 Script de fecha (oneshot) | ✅ | Prueba completa: dos `start` → dos líneas en `/var/log/consola-fecha.log` |
-| C5 HAProxy agregar / quitar | ✅ desde el 26 | Con la configuración predeterminada de Debian fallaba («no tiene ningún back-end»); ahora el primer servidor crea `frontend` y `backend`. Probado en `consola-pruebas` |
+| C5 HAProxy agregar / quitar | ✅ desde el 26 | Con la configuración predeterminada de Debian fallaba («no tiene ningún back-end»); ahora el primer servidor crea `frontend` y `backend`. Probado en `consola-pruebas` y en la VM `balanceador` |
 | C6 Diagrama del escenario | ✅ | En el documento |
 | Videos | ✅ | Uno por parte (A 8:52, B 3:49, C 3:33) en vez de V1–V11 |
 | H2 Integración de punta a punta | ✅ el 26 | Prueba completa: 81 OK, 0 FALLA |
@@ -365,6 +365,6 @@ Todas las ramas (`cristhian`, `daniel`, `wiliam`, `wiliam-final`, `integracion`,
 ### Pendientes
 
 1. **Documento, Parte C:** describe Bookzilla como un servidor en Python (`http.server`, «Bookzilla Ready») y también como la aplicación en Go; dice `Restart=always` (la unidad usa `on-failure`) y `/var/log/fecha.log` (el script escribe en `/var/log/consola-fecha.log`). La prueba completa usa el Bookzilla real en Go.
-2. **VM `balanceador`:** Guest Additions 6.0 (no responden con VirtualBox 7.2), sin la llave de la consola y sin `keys/guest-pass-balanceador`. Para usarla: Guest Additions 7.2 + archivo de contraseña, o agregar `keys/consola_ed25519.pub` a su `/root/.ssh/authorized_keys`.
+2. **VM `balanceador`:** resuelto el 26: se le instaló la llave de la consola, que entra por SSH; agregar y quitar un servidor en `http_back` funcionó. Sus Guest Additions siguen en 6.0 (no responden con VirtualBox 7.2). Para la sustentación, encender `servidor1`–`servidor3`: sus líneas no tienen `check` y HAProxy les envía peticiones aunque estén apagados.
 3. **Duda del §7.2 sin resolver:** la consola no crea VMs desde el disco multiconexión; «Agregar servidor» edita `haproxy.cfg`.
 4. **Red de las VMs:** están en modo puente sobre `wlo1` (Wi-Fi). Con el host por cable hay que cambiar el adaptador (ver PRUEBA-COMPLETA.md).
