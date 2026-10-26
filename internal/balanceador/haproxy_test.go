@@ -74,7 +74,7 @@ func TestAddServerRejects(t *testing.T) {
 			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
 		}
 	}
-	if _, err := AddServer("global\n\tdaemon\n", "b", Server{"n", "10.0.0.9", "80"}); err == nil || !strings.Contains(err.Error(), "ningún back-end") {
+	if _, err := AddServer("global\n\tdaemon\n\nfrontend f\n    bind *:80\n", "b", Server{"n", "10.0.0.9", "80"}); err == nil || !strings.Contains(err.Error(), "ningún back-end") {
 		t.Errorf("no backends: err = %v", err)
 	}
 }
@@ -109,5 +109,43 @@ func TestValidateBackend(t *testing.T) {
 		if ValidateBackend(bad) == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// Debian's default haproxy.cfg: global and defaults, no frontend and no backend.
+const haproxyDebian = "global\n\tlog /dev/log\tlocal0\n\tdaemon\n\ndefaults\n\tlog\tglobal\n\tmode\thttp\n\ttimeout connect 5000\n\ttimeout client  50000\n\ttimeout server  50000\n"
+
+// On the default file the first server creates the frontend on port 80 and the backend,
+// and keeps the rest of the file as it was.
+func TestAddServerToTheDefaultConfigCreatesFrontendAndBackend(t *testing.T) {
+	srv := Server{Name: ServerName("192.168.40.57", "8080"), IP: "192.168.40.57", Port: "8080"}
+	out, err := AddServer(haproxyDebian, "web_servers", srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, haproxyDebian) {
+		t.Fatalf("the default file must be kept:\n%s", out)
+	}
+	for _, want := range []string{"frontend consola_http\n", "    bind *:80\n", "    default_backend web_servers\n", "backend web_servers\n", "    balance roundrobin\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if got := ListServers(out, "web_servers"); len(got) != 1 || got[0] != srv {
+		t.Errorf("servers = %v", got)
+	}
+	// A second server goes into the backend just created.
+	out2, err := AddServer(out, "web_servers", Server{Name: "srv-b", IP: "192.168.40.58", Port: "8080"})
+	if err != nil || len(ListServers(out2, "web_servers")) != 2 || strings.Count(out2, "frontend ") != 1 {
+		t.Fatalf("second add: %v\n%s", err, out2)
+	}
+}
+
+// A file that already has its own frontend is the user's design: a missing backend is
+// still an error and nothing is created.
+func TestAddServerDoesNotCreateABackendNextToAnExistingFrontend(t *testing.T) {
+	cfg := haproxyDebian + "\nfrontend web\n    bind *:80\n    default_backend app\n"
+	if _, err := AddServer(cfg, "web_servers", Server{Name: "s", IP: "192.168.40.57", Port: "8080"}); err == nil {
+		t.Fatal("want an error: the backend does not exist and the file has its own frontend")
 	}
 }

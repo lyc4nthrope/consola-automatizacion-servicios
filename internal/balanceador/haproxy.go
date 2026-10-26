@@ -116,12 +116,39 @@ func missingBackend(cfg, backend string) error {
 	return fmt.Errorf("haproxy.cfg no tiene ningún back-end; crea uno (por ejemplo «backend web_servers») antes de agregar servidores.")
 }
 
+// hasProxySections reports whether cfg already routes traffic (a frontend, backend or
+// listen section). Debian's default haproxy.cfg has only global and defaults.
+func hasProxySections(cfg string) bool {
+	for _, line := range strings.Split(cfg, "\n") {
+		if f := strings.Fields(stripComment(line)); len(f) > 0 && (f[0] == "frontend" || f[0] == "backend" || f[0] == "listen") {
+			return true
+		}
+	}
+	return false
+}
+
+// withFirstBackend turns the default file into a load balancer: a frontend on port 80
+// that sends every request to the backend, round robin, with srv as its first server.
+// The rest of the file is kept as it was.
+func withFirstBackend(cfg, backend string, srv Server) string {
+	if cfg != "" && !strings.HasSuffix(cfg, "\n") {
+		cfg += "\n"
+	}
+	return cfg + "\n# Created by the console on the first server added.\n" +
+		"frontend consola_http\n    bind *:80\n    default_backend " + backend + "\n\n" +
+		"backend " + backend + "\n    balance roundrobin\n    server " + srv.Name + " " + srv.Address() + " check\n"
+}
+
 // AddServer adds "server <name> <ip>:<port> check" at the end of the backend, with the
 // indentation of the section. The backend must exist, and an address already in it is
-// rejected (adding it twice would send it double traffic).
+// rejected (adding it twice would send it double traffic). On a file with no frontend,
+// backend or listen section (Debian's default), the first server creates them.
 func AddServer(cfg, backend string, srv Server) (string, error) {
 	lines := strings.Split(cfg, "\n")
 	start, end := section(lines, "backend", backend)
+	if start < 0 && !hasProxySections(cfg) {
+		return withFirstBackend(cfg, backend, srv), nil
+	}
 	if start < 0 {
 		return "", missingBackend(cfg, backend)
 	}
