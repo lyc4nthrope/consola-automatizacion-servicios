@@ -1329,7 +1329,12 @@ h2 {
   margin: 0 0 1rem;
 }
 
+/* Bootstrap's reboot gives every legend a heading size and float: left. This one is a field
+   label like the others, on its own row above the checkboxes. */
 .issue-datos legend {
+  grid-column: 1 / -1;
+  float: none;
+  font-size: inherit;
   margin-bottom: 0.35rem;
 }
 
