@@ -187,7 +187,7 @@ func TestPlanEliminar(t *testing.T) {
 		}
 		// reload
 		if p.Commands[3].Name != "systemctl" || strings.Join(p.Commands[3].Args, "|") != "reload|ssh" {
-t.Errorf("%s: systemctl reload missing: %v", tc.nombre, p.Commands[3].Args)
+			t.Errorf("%s: systemctl reload missing: %v", tc.nombre, p.Commands[3].Args)
 		}
 		if len(p.Commands) != 4 {
 			t.Errorf("%s: want 4 commands, got %d", tc.nombre, len(p.Commands))
