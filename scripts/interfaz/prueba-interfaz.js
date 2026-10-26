@@ -39,7 +39,7 @@ let n = 0;
 // null when the command fails.
 function ssh(ip, comando, llave = KEY, usuario = "root") {
   try {
-    return execFileSync("ssh", ["-i", llave, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+    return execFileSync("ssh", ["-i", llave, "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=no",
       "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=10", `${usuario}@${ip}`, comando],
     { stdio: ["ignore", "pipe", "ignore"], timeout: 60000 }).toString().trim();
   } catch {

@@ -39,7 +39,7 @@ title() { printf '\n== %s\n' "$1"; }
 # If SSH itself fails (exit 255) the run stops: otherwise every "! vm ..." check would
 # pass on an unreachable VM.
 vm() {
-	ssh -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "root@$VM_IP" "$@" 2>/dev/null
+	ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 "root@$VM_IP" "$@" 2>/dev/null
 	local code=$?
 	[ "$code" -eq 255 ] && kill -TERM $$
 	return "$code"
@@ -137,7 +137,7 @@ curl -s -o "$TMP/root_key" "$CONSOLA/usuarios/llaves/$token"
 chmod 600 "$TMP/root_key"
 check "La llave descargada es una llave privada" "grep -q 'PRIVATE KEY' $TMP/root_key"
 check "La descarga es de una sola vez" "! curl -sf -o /dev/null '$CONSOLA/usuarios/llaves/$token'"
-check "Con la llave descargada se entra como root" "ssh -i $TMP/root_key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$VM_IP true"
+check "Con la llave descargada se entra como root" "ssh -i $TMP/root_key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$VM_IP true"
 check "sshd: root solo con llave (prohibit-password)" "vm sshd -T | grep -qi '^permitrootlogin without-password\|^permitrootlogin prohibit-password'"
 
 title "3.1.3 Mensaje de entrada /etc/issue"
@@ -161,7 +161,7 @@ if [ "$code" = 303 ] && [ -n "$token" ]; then ok "Crear prueba1 (sudo + llave)";
 curl -s -o "$TMP/u_key" "$CONSOLA/usuarios/llaves/$token"
 chmod 600 "$TMP/u_key"
 check "prueba1 está en el grupo sudo" "vm id prueba1 | grep -q '(sudo)'"
-check "prueba1 entra con su llave" "ssh -i $TMP/u_key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null prueba1@$VM_IP true"
+check "prueba1 entra con su llave" "ssh -i $TMP/u_key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null prueba1@$VM_IP true"
 check "sshd: prueba1 sin contraseña (passwordauthentication no)" "vm sshd -T -C user=prueba1,host=x,addr=127.0.0.1 | grep -qi '^passwordauthentication no'"
 
 title "3.2.2 Eliminar usuarios, con y sin archivos"
