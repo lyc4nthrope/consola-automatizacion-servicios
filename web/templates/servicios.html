@@ -60,10 +60,10 @@
     {{if .Data}}{{if eq .Data.Formulario "accion"}}{{template "resumen-errores" $.Form}}{{end}}{{end}}
 
     <label class="form-label" for="servicio-accion">Nombre del servicio</label>
-    <input class="form-control mono" id="servicio-accion" name="servicio" type="text" value="{{index .Form.Values "servicio"}}"
+    <input class="form-control mono" id="servicio-accion" name="servicio-accion" type="text" value="{{index .Form.Values "servicio-accion"}}"
       maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
       {{aria .Form "servicio-accion" "servicio-accion-ayuda"}}>
-    {{template "error-campo" (campo .Form "servicio")}}
+    {{template "error-campo" (campo .Form "servicio-accion")}}
     <p class="field-hint" id="servicio-accion-ayuda">Nombre de la unidad systemd registrada, por ejemplo <span class="mono" translate="no">cron</span> o <span class="mono" translate="no">bookzilla</span>.</p>
 
     <label class="form-label" for="accion">Acción a ejecutar</label>
