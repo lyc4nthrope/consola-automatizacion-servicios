@@ -75,13 +75,13 @@ func TestInvalidPartCFormsRunNothing(t *testing.T) {
 }
 
 func TestDeployPlanNeverBuildsShellText(t *testing.T) {
-	p := planDesplegar("pruebas", servicioEjemplo)
+	p := planDesplegar("pruebas", servicioEjemplo, "bookzilla", nil)
 	for _, c := range p.Commands {
 		if c.Name == "sh" && c.Args[1] != ensureUserScript && c.Args[1] != writeUnitScript {
 			t.Errorf("unexpected shell script %q", c.Args[1])
 		}
 	}
-	if p.Commands[0].String() != "test -x /opt/bookzilla/bookzilla" || p.Commands[len(p.Commands)-1].Args[0] != "enable" {
+	if p.Commands[0].String() != "install -d -m 755 -- /opt/bookzilla" || p.Commands[len(p.Commands)-1].String() != "systemctl try-restart -- bookzilla" {
 		t.Fatalf("commands = %v", p.Commands)
 	}
 }

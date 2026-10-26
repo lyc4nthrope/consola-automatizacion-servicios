@@ -72,7 +72,6 @@
       <option value="start" {{if eq (index .Form.Values "accion") "start"}}selected{{end}}>Iniciar (start)</option>
       <option value="stop" {{if eq (index .Form.Values "accion") "stop"}}selected{{end}}>Detener (stop)</option>
       <option value="restart" {{if eq (index .Form.Values "accion") "restart"}}selected{{end}}>Reiniciar (restart)</option>
-      <option value="reload" {{if eq (index .Form.Values "accion") "reload"}}selected{{end}}>Recargar configuración (reload)</option>
       <option value="enable" {{if eq (index .Form.Values "accion") "enable"}}selected{{end}}>Habilitar al arranque (enable)</option>
       <option value="disable" {{if eq (index .Form.Values "accion") "disable"}}selected{{end}}>Deshabilitar del arranque (disable)</option>
     </select>
