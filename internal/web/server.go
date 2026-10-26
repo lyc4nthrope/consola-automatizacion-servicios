@@ -398,6 +398,9 @@ func (s *server) render(w http.ResponseWriter, status int, page string, v view) 
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The pages carry the live state of a VM: never let the browser reuse a stale copy
+	// (a cached button label or form would silently send the wrong request).
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_, _ = buf.WriteTo(w)
 }
