@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bookzilla — Catálogo de libros</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="d-flex flex-column min-vh-100">
+
+  <!-- ===== ENCABEZADO: nombre de la app, materia y servidor que responde =====
+       Sin menú colapsable: no hay navegación que esconder y el servidor debe
+       verse siempre, también en celular. -->
+  <header class="site-header border-bottom">
+    <div class="container d-flex align-items-center gap-3 py-2">
+      <a class="navbar-brand fw-bold me-auto" href="/">📚 Bookzilla</a>
+      <span class="header-meta d-none d-md-inline">
+        <strong>{{.Group.Course}}</strong> · {{.Group.Term}} · {{.Group.University}}
+      </span>
+      <span class="badge host-badge" title="Nombre de host obtenido con os.Hostname()">
+        Servidor: {{.Hostname}}
+      </span>
+    </div>
+  </header>
+
+  <main class="container py-4 flex-grow-1">
+    <!-- ===== ALERTA PRG (se completa desde main.js con ?msg=...) ===== -->
+    <div id="flash" class="alert d-none" role="alert">
+      <span id="flash-text"></span>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+
+    <!-- ===== BANNER / TÍTULO + BUSCADOR ===== -->
+    <section class="catalog-banner rounded-4 p-4 p-md-5 mb-4">
+      <div class="row align-items-center g-4">
+        <div class="col-12 col-lg-6">
+          <h1 class="display-5 fw-bold mb-2">Catálogo de libros</h1>
+          <p class="mb-0 opacity-75">
+            Explora los títulos del catálogo: busca por título o autor con el filtro.
+          </p>
+        </div>
+        <div class="col-12 col-lg-6">
+          <label for="book-search" class="form-label fw-semibold">Buscar libros</label>
+          <input type="search" id="book-search" class="form-control form-control-lg"
+            placeholder="Ej.: García, 1984, Rayuela…" autocomplete="off">
+        </div>
+      </div>
+    </section>
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+      <h2 class="h4 mb-0">Títulos disponibles</h2>
+      <div class="d-flex align-items-center gap-3 flex-grow-1 justify-content-end">
+        <span id="result-count" class="text-body-secondary small">Mostrando {{.Count}} de {{.Count}} libros</span>
+        <button type="button" id="add-book-btn" class="btn btn-bz">Agregar libro</button>
+      </div>
+    </div>
+
+    <!-- ===== GRID RESPONSIVE (grid de Bootstrap) ===== -->
+    <div id="book-grid" class="row g-4">
+      {{range .Books}}
+      <div class="col-12 col-sm-6 col-md-4 col-xl-3 book-card"
+        data-title="{{.Title}}" data-author="{{.Author}}">
+        <article class="card h-100 book-card-inner shadow-sm">
+          {{if .Cover}}
+          <img src="/{{.Cover}}" class="book-cover" alt="Portada de {{.Title}}">
+          {{else}}
+          <div class="book-cover book-cover-empty d-flex align-items-center justify-content-center">Sin portada</div>
+          {{end}}
+          <div class="card-body d-flex flex-column">
+            <h3 class="card-title h5 mb-1">{{.Title}}</h3>
+            <p class="card-text text-body-secondary mb-2">{{.Author}}</p>
+            <span class="badge year-badge align-self-start">{{.Year}}</span>
+            <div class="d-flex gap-2 mt-auto pt-3">
+              <button type="button" class="btn btn-sm btn-outline-dark flex-grow-1" data-book-edit
+                data-id="{{.ID}}" data-title="{{.Title}}" data-author="{{.Author}}" data-year="{{.Year}}">
+                Editar
+              </button>
+              <form method="post" action="/books/{{.ID}}/delete" class="flex-grow-1" data-book-delete>
+                <button type="button" class="btn btn-sm btn-outline-danger w-100">Eliminar</button>
+              </form>
+            </div>
+          </div>
+        </article>
+      </div>
+      {{end}}
+    </div>
+
+    <p id="no-results" class="text-center text-body-secondary py-5 d-none">
+      No se encontraron libros que coincidan con la búsqueda.
+    </p>
+  </main>
+
+  <!-- ===== BANNER INFERIOR: datos del grupo de trabajo (los define main.go) ===== -->
+  <footer class="site-footer mt-auto">
+    <div class="container py-4">
+      <div class="row g-3 align-items-center">
+        <div class="col-12 col-md-5">
+          <p class="mb-1 fw-semibold">Integrantes del grupo</p>
+          <ul class="list-unstyled mb-0 small opacity-75">
+            {{range .Group.Members}}<li>{{.}}</li>{{end}}
+          </ul>
+        </div>
+        <div class="col-12 col-md-4">
+          <p class="mb-1 fw-semibold">{{.Group.Course}} · {{.Group.Term}}</p>
+          <p class="mb-0 small opacity-75">
+            {{.Group.Professor}}<br>
+            {{.Group.Program}} — {{.Group.University}}
+          </p>
+        </div>
+        <div class="col-12 col-md-3 text-md-end">
+          <span class="badge host-badge" title="Nombre de host obtenido con os.Hostname()">
+            Servidor: {{.Hostname}}
+          </span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ===== MODAL ALTA / EDICIÓN ===== -->
+  <div class="modal fade" id="bookFormModal" tabindex="-1" aria-labelledby="bookFormTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="book-form" method="post" action="/books" enctype="multipart/form-data">
+          <div class="modal-header">
+            <h2 class="modal-title h5" id="bookFormTitle">Agregar libro</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="book-title" class="form-label">Título</label>
+              <input type="text" class="form-control" id="book-title" name="title"
+                maxlength="200" required>
+            </div>
+            <div class="mb-3">
+              <label for="book-author" class="form-label">Autor</label>
+              <input type="text" class="form-control" id="book-author" name="author"
+                maxlength="200" required>
+            </div>
+            <div class="mb-3">
+              <label for="book-year" class="form-label">Año</label>
+              <input type="number" class="form-control" id="book-year" name="year"
+                min="1000" max="2100" step="1" required>
+            </div>
+            <div class="mb-2">
+              <label for="book-cover" class="form-label">Portada</label>
+              <input type="file" class="form-control" id="book-cover" name="cover"
+                accept="image/jpeg,image/png,image/webp,image/gif">
+              <div class="form-text" id="cover-hint">
+                Formatos admitidos: JPEG, PNG, WebP o GIF (máx. 5 MB).
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-bz" id="book-submit">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/vendor/bootstrap.bundle.min.js"></script>
+  <script src="/static/js/main.js"></script>
+</body>
+</html>

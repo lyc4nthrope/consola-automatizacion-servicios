@@ -1,0 +1,132 @@
+:root {
+  /* Paleta con significado:
+     primary: texto e identidad (encabezado, pie, servidor).
+     accent:  SOLO acciones principales (botones), para que el naranja
+              siempre signifique "esto se puede presionar".
+     muted:   datos informativos que no son interactivos (año). */
+  --bz-primary: #1f2a44;
+  --bz-accent: #e8a33d;
+  --bz-muted-bg: #e7eaf1;
+  --bz-muted-text: #4a5468;
+  --bz-surface: #f7f5f0;
+  --bz-card: #ffffff;
+}
+
+body {
+  background-color: var(--bz-surface);
+  color: var(--bz-primary);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.site-header {
+  background-color: var(--bz-card);
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+}
+
+.site-header .navbar-brand {
+  color: var(--bz-primary);
+  font-size: 1.4rem;
+}
+
+/* Texto informativo del encabezado: gris oscuro con buen contraste sobre
+   blanco (Bootstrap "disabled" lo aclaraba y parecía un enlace inactivo). */
+.header-meta {
+  color: var(--bz-muted-text);
+  font-size: 0.9rem;
+}
+
+.host-badge {
+  background-color: var(--bz-primary);
+  color: #fff;
+  font-weight: 500;
+  font-size: 0.8rem;
+  padding: 0.5em 0.8em;
+}
+
+.catalog-banner {
+  background: linear-gradient(135deg, var(--bz-primary) 0%, #33406b 60%, #47578f 100%);
+  color: #fff;
+}
+
+.catalog-banner .form-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.book-card-inner {
+  border: none;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background-color: var(--bz-card);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.book-card-inner:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 0.75rem 1.5rem rgba(31, 42, 68, 0.18) !important;
+}
+
+.book-cover {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
+  background-color: #e9e6df;
+  border-bottom: 1px solid rgba(31, 42, 68, 0.08);
+}
+
+.book-card-inner .card-title {
+  line-height: 1.25;
+  min-height: 2.5em;
+}
+
+/* El año es un dato, no una acción: color neutro, no el naranja de los botones. */
+.year-badge {
+  background-color: var(--bz-muted-bg);
+  color: var(--bz-primary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.45em 0.85em;
+}
+
+.site-footer {
+  background-color: var(--bz-primary);
+  color: #fff;
+}
+
+.site-footer .small {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Mismo significado que en el encabezado, invertido para el fondo oscuro. */
+.site-footer .host-badge {
+  background-color: #fff;
+  color: var(--bz-primary);
+}
+
+.btn-bz {
+  background-color: var(--bz-accent);
+  color: var(--bz-primary);
+  border: none;
+  font-weight: 600;
+}
+
+.btn-bz:hover,
+.btn-bz:focus {
+  background-color: #f1b455;
+  color: var(--bz-primary);
+}
+
+.book-cover-empty {
+  color: #8b909d;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 575.98px) {
+  .book-card-inner .card-title {
+    min-height: 0;
+  }
+}
