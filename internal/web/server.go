@@ -108,6 +108,7 @@ type view struct {
 	Form    Form     // module pages: values typed and errors per field
 	Data    any      // module pages: whatever the module passes to its template
 	Mapa    []mapaVM // panel: the infrastructure map
+	Parcial bool     // fragment request: render the page content without the layout
 }
 
 // NewHandler returns the console routes.
@@ -310,6 +311,7 @@ func (s *server) newView(r *http.Request, title, active string) view {
 		Current: cur,
 		Channel: s.state.Channel(cur.Name),
 		Version: Version,
+		Parcial: esParcial(r),
 	}
 	if s.log != nil {
 		v.Recent = s.log.Recent(5)
@@ -390,9 +392,15 @@ func safeBack(p string) string {
 }
 
 // render executes the page into a buffer first, so a template error never sends half a page.
+// A fragment request (see esParcial) gets the page content only: the caller's script drops it
+// into the live document, so it must not carry a second <html> or the top bars.
 func (s *server) render(w http.ResponseWriter, status int, page string, v view) {
 	var buf bytes.Buffer
-	if err := s.pages[page].ExecuteTemplate(&buf, "layout", v); err != nil {
+	name := "layout"
+	if v.Parcial {
+		name = "content"
+	}
+	if err := s.pages[page].ExecuteTemplate(&buf, name, v); err != nil {
 		log.Printf("rendering %s: %v", page, err)
 		http.Error(w, "Error interno al mostrar la página. Recarga; si se repite, revisa el registro de la consola en la terminal.", http.StatusInternalServerError)
 		return
@@ -408,6 +416,13 @@ func (s *server) render(w http.ResponseWriter, status int, page string, v view) 
 func healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok\n"))
+}
+
+// esParcial reports whether the console's own script asked for the page content only, so it
+// can replace it without reloading the document. The header changes what is rendered, never
+// what is validated or allowed: the CSRF filter below still applies to every request.
+func esParcial(r *http.Request) bool {
+	return r.Header.Get("X-Consola-Parcial") == "1"
 }
 
 // sameOrigin rejects state-changing requests sent by other sites (CSRF). The console runs

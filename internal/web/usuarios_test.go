@@ -1,8 +1,10 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -941,12 +943,18 @@ func TestPaginaEliminarListaFiltrada(t *testing.T) {
 		t.Fatalf("GET /usuarios = %d", rec.Code)
 	}
 	cuerpo := rec.Body.String()
-	for _, quiero := range []string{`<option value="daniel">`, `<option value="viejo">`, "Eliminar todos los archivos", `name="confirmar"`} {
+	for _, quiero := range []string{
+		`href="/usuarios/editar?usuario=daniel"`,
+		`href="/usuarios/editar?usuario=viejo"`,
+		`href="/usuarios?confirmar=daniel"`,
+		`href="/usuarios?confirmar=viejo"`,
+		"Nuevo usuario",
+	} {
 		if !strings.Contains(cuerpo, quiero) {
 			t.Errorf("la página no muestra %q", quiero)
 		}
 	}
-	for _, noQuiero := range []string{`value="root"`, `value="daemon"`, `value="nobody"`, `value="raro"`, `value="sistema"`} {
+	for _, noQuiero := range []string{"usuario=root", "usuario=daemon", "usuario=nobody", "usuario=raro", "usuario=sistema"} {
 		if strings.Contains(cuerpo, noQuiero) {
 			t.Errorf("la página ofrece una cuenta protegida o fuera de rango: %q", noQuiero)
 		}
@@ -967,10 +975,10 @@ func TestPaginaEliminarProtegeLaCuentaDeLaConsola(t *testing.T) {
 	_ = estado.SetExecutor("pruebas", canal)
 	rec := serve(t, newTestHandler(t, estado), httptest.NewRequest("GET", "/usuarios", nil))
 	cuerpo := rec.Body.String()
-	if strings.Contains(cuerpo, `<option value="daniel">`) {
+	if strings.Contains(cuerpo, "usuario=daniel") {
 		t.Error("la lista ofrece la cuenta ssh de la consola (daniel)")
 	}
-	if !strings.Contains(cuerpo, `<option value="viejo">`) {
+	if !strings.Contains(cuerpo, "usuario=viejo") {
 		t.Error("la lista no ofrece la cuenta normal viejo")
 	}
 }
@@ -982,8 +990,8 @@ func TestPaginaEliminarSinCanalAvisa(t *testing.T) {
 	if !strings.Contains(cuerpo, "todavía no tiene canal con la VM") {
 		t.Error("la página no explica que falta el canal")
 	}
-	if strings.Contains(cuerpo, `name="confirmar"`) {
-		t.Error("la página ofrece el desplegable sin canal")
+	if strings.Contains(cuerpo, "usuario=viejo") {
+		t.Error("la página ofrece la tabla sin canal")
 	}
 }
 
@@ -1021,8 +1029,8 @@ func TestConfirmacionIgnoraCuentasProtegidas(t *testing.T) {
 	if strings.Contains(cuerpo, "¿Eliminar a") {
 		t.Error("la confirmación aceptó root")
 	}
-	if !strings.Contains(cuerpo, `name="confirmar"`) {
-		t.Error("la página no volvió al formulario")
+	if !strings.Contains(cuerpo, "usuario=viejo") {
+		t.Error("la página no volvió a la tabla de cuentas")
 	}
 }
 
@@ -1135,5 +1143,217 @@ func TestEliminarRechazaNombreInvalido(t *testing.T) {
 	}
 	if llamadas := canal.Calls(); len(llamadas) != 0 {
 		t.Errorf("se enviaron comandos: %v", llamadas)
+	}
+}
+
+// ---- modo fragmento (X-Consola-Parcial) ----
+//
+// El JS del CRUD sustituye el contenido de la página viva con lo que responde el servidor,
+// así que un fragmento nunca puede traer un segundo <html> ni las barras de la consola.
+
+func peticionParcial(metodo, destino string, forma url.Values) *http.Request {
+	var cuerpo string
+	if forma != nil {
+		cuerpo = forma.Encode()
+	}
+	req := httptest.NewRequest(metodo, destino, strings.NewReader(cuerpo))
+	if forma != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	req.Header.Set("X-Consola-Parcial", "1")
+	return req
+}
+
+func TestUsuariosParcialDevuelveSoloElContenido(t *testing.T) {
+	estado := newTestState()
+	_ = estado.SetExecutor("pruebas", canalEliminarDePrueba(passwdDePrueba))
+	rec := serve(t, newTestHandler(t, estado), peticionParcial("GET", "/usuarios", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET parcial /usuarios = %d", rec.Code)
+	}
+	cuerpo := rec.Body.String()
+	for _, noQuiero := range []string{"<html", "<!doctype", `class="topbar"`, `id="contenido"`} {
+		if strings.Contains(cuerpo, noQuiero) {
+			t.Errorf("el fragmento trae la página completa (%q)", noQuiero)
+		}
+	}
+	for _, quiero := range []string{"Cuentas de la VM", `href="/usuarios/editar?usuario=viejo"`} {
+		if !strings.Contains(cuerpo, quiero) {
+			t.Errorf("el fragmento no muestra %q", quiero)
+		}
+	}
+}
+
+func TestCrearParcialDevuelveElFormularioConErrores(t *testing.T) {
+	estado := newTestState()
+	_ = estado.SetExecutor("pruebas", &executor.Fake{NameValue: "SSH"})
+	rec := serve(t, newTestHandler(t, estado), peticionParcial("POST", "/usuarios/crear", url.Values{
+		"usuario": {"Root-!"}, "contrasena": {"ClaveSegura-2026"},
+	}))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST parcial /usuarios/crear = %d, want 422", rec.Code)
+	}
+	cuerpo := rec.Body.String()
+	if strings.Contains(cuerpo, "<html") {
+		t.Error("el fragmento trae la página completa")
+	}
+	if !strings.Contains(cuerpo, "El nombre de usuario empieza con una minúscula") {
+		t.Errorf("el fragmento no trae el error del campo: %s", cuerpo)
+	}
+	if !strings.Contains(cuerpo, `for="usuario"`) {
+		t.Error("el error no está ligado al campo usuario")
+	}
+}
+
+// Una acción que termina bien responde 200 con el resultado en línea y la tabla releída,
+// en lugar del 303 a /resultado que usa la navegación normal.
+func TestEliminarParcialDevuelveResultadoYLista(t *testing.T) {
+	estado := newTestState()
+	_ = estado.SetExecutor("pruebas", canalEliminarDePrueba(passwdDePrueba))
+	rec := serve(t, newTestHandler(t, estado), peticionParcial("POST", "/usuarios/eliminar", url.Values{"usuario": {"viejo"}}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST parcial /usuarios/eliminar = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	cuerpo := rec.Body.String()
+	for _, quiero := range []string{"Resultado de la operación", "Operación exitosa", "usuario=viejo"} {
+		if !strings.Contains(cuerpo, quiero) {
+			t.Errorf("el fragmento no muestra %q", quiero)
+		}
+	}
+	if strings.Contains(cuerpo, "<html") {
+		t.Error("el fragmento trae la página completa")
+	}
+}
+
+// El JS del CRUD envía FormData, que viaja como multipart/form-data. ParseForm NO lee ese
+// cuerpo: sin ParseMultipartForm el nombre llega vacío y la validación lo rechaza como si
+// fuera inválido («El nombre de usuario empieza con una minúscula…») aunque el usuario exista.
+func TestCrearAceptaFormularioMultipart(t *testing.T) {
+	estado := newTestState()
+	canal := &executor.Fake{NameValue: "SSH"}
+	canal.RunFunc = func(c executor.Command) (executor.Result, error) {
+		if c.Name == "getent" {
+			return executor.Result{ExitCode: 2}, nil // la cuenta está libre
+		}
+		return executor.Result{}, nil
+	}
+	_ = estado.SetExecutor("pruebas", canal)
+
+	var cuerpo bytes.Buffer
+	mw := multipart.NewWriter(&cuerpo)
+	_ = mw.WriteField("usuario", "daniel")
+	_ = mw.WriteField("contrasena", "ClaveSegura-2026")
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/usuarios/crear", &cuerpo)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	rec := serve(t, newTestHandler(t, estado), req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("POST multipart /usuarios/crear = %d, want 303 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// El mismo caso en la edición, que es el flujo que reportó el fallo: abrir un usuario,
+// marcar «Generar/regenerar llave SSH» y guardar.
+func TestEditarAceptaFormularioMultipart(t *testing.T) {
+	estado := newTestState()
+	canal := &executor.Fake{NameValue: "SSH"}
+	canal.RunFunc = func(c executor.Command) (executor.Result, error) {
+		if c.Name == "getent" && len(c.Args) == 2 {
+			return executor.Result{ExitCode: 0}, nil // la cuenta existe
+		}
+		return executor.Result{}, nil
+	}
+	_ = estado.SetExecutor("pruebas", canal)
+
+	var cuerpo bytes.Buffer
+	mw := multipart.NewWriter(&cuerpo)
+	_ = mw.WriteField("usuario", "daniel")
+	_ = mw.WriteField("llave", "on")
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/usuarios/editar", &cuerpo)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	rec := serve(t, newTestHandler(t, estado), req)
+	if strings.Contains(rec.Body.String(), "El nombre de usuario empieza") {
+		t.Fatalf("la edición multipart se rechazó como nombre inválido (%d)", rec.Code)
+	}
+	if rec.Code == http.StatusUnprocessableEntity {
+		t.Fatalf("POST multipart /usuarios/editar = 422 (%s)", rec.Body.String())
+	}
+}
+
+// Al volver a editar, el panel debe decir si el usuario ya tiene la llave de la consola:
+// sin eso parece que la edición anterior no dejó nada.
+func TestEditarMuestraElEstadoDeLaLlave(t *testing.T) {
+	casos := []struct {
+		nombre string
+		salida int
+		quiero string
+	}{
+		{"instalada", 0, "Llave SSH instalada"},
+		{"sin llave", 1, "Sin llave SSH"},
+	}
+	for _, caso := range casos {
+		t.Run(caso.nombre, func(t *testing.T) {
+			estado := newTestState()
+			canal := &executor.Fake{NameValue: "SSH"}
+			canal.RunFunc = func(c executor.Command) (executor.Result, error) {
+				switch {
+				case c.Name == "test":
+					return executor.Result{ExitCode: caso.salida}, nil
+				case c.Name == "getent" && len(c.Args) == 2:
+					return executor.Result{ExitCode: 0}, nil // la cuenta existe
+				}
+				return executor.Result{}, nil
+			}
+			_ = estado.SetExecutor("pruebas", canal)
+
+			rec := serve(t, newTestHandler(t, estado), httptest.NewRequest("GET", "/usuarios/editar?usuario=daniel", nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET /usuarios/editar = %d (%s)", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), caso.quiero) {
+				t.Errorf("el panel no muestra %q", caso.quiero)
+			}
+		})
+	}
+}
+
+// El resultado de activar o desactivar sudo debe enseñar el comando, como el resto de
+// operaciones: la salida técnica no puede quedar plegada por defecto.
+func TestEditarConSudoMuestraElComando(t *testing.T) {
+	casos := []struct {
+		nombre  string
+		forma   url.Values
+		comando string
+	}{
+		{"activar", url.Values{"usuario": {"daniel"}, "sudo": {"on"}}, "usermod -aG sudo -- daniel"},
+		{"desactivar", url.Values{"usuario": {"daniel"}}, "gpasswd -d daniel sudo"},
+	}
+	for _, caso := range casos {
+		t.Run(caso.nombre, func(t *testing.T) {
+			estado := newTestState()
+			canal := &executor.Fake{NameValue: "SSH"}
+			canal.RunFunc = func(c executor.Command) (executor.Result, error) {
+				if c.Name == "getent" && len(c.Args) == 2 {
+					return executor.Result{ExitCode: 0}, nil
+				}
+				return executor.Result{}, nil
+			}
+			_ = estado.SetExecutor("pruebas", canal)
+
+			rec := serve(t, newTestHandler(t, estado), peticionParcial("POST", "/usuarios/editar", caso.forma))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("POST parcial /usuarios/editar = %d (%s)", rec.Code, rec.Body.String())
+			}
+			cuerpo := rec.Body.String()
+			if !strings.Contains(cuerpo, caso.comando) {
+				t.Errorf("el resultado no muestra el comando %q", caso.comando)
+			}
+			if !strings.Contains(cuerpo, `class="resultado-salida" open`) {
+				t.Error("la salida técnica quedó plegada: el comando no se ve al terminar")
+			}
+		})
 	}
 }

@@ -158,10 +158,25 @@ h2 {
   flex: 1;
 }
 
+/* The column is centered inside the main area: with a fixed sidebar the leftover width
+   would otherwise pile up on the right and the page would look lopsided on desktop. */
 .content {
   width: 100%;
   max-width: 72rem;
+  margin-inline: auto;
   padding: 2rem 1.5rem 3rem;
+}
+
+/* Form-centric pages (one panel under each heading): keep a narrow column so the headings,
+   hints and panels share a single vertical axis instead of hugging the left of a wide area. */
+.page-narrow {
+  width: 100%;
+  max-width: 44rem;
+  margin-inline: auto;
+}
+
+.page-narrow .panel-c {
+  max-width: none;
 }
 
 /* <main tabindex="-1"> (skip link target) and the mobile menu container (focused by
@@ -175,14 +190,6 @@ h2 {
 .sidebar {
   background: var(--c-sidebar);
   border-right: 1px solid var(--c-border);
-}
-
-@media (min-width: 992px) {
-  .sidebar-inner {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-  }
 }
 
 @media (max-width: 991.98px) {
@@ -200,6 +207,19 @@ h2 {
   padding: 1.25rem 0.75rem;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* On desktop the menu is exactly one viewport tall and stays put while the page scrolls:
+   its four sections and the credits always fit, so it must not stretch to the height of the
+   document (min-height: 100% did, which pushed the credits off-screen and left a long empty
+   column behind). On short windows it scrolls inside itself instead. */
+@media (min-width: 992px) {
+  .sidebar-inner {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    min-height: 0;
+  }
 }
 
 .brand {
@@ -1168,6 +1188,133 @@ h2 {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 1rem;
+}
+
+/* Neutral button: the "cancel" of a panel, quieter than the accent one. */
+.btn-outline-c {
+  --bs-btn-color: var(--c-text);
+  --bs-btn-border-color: var(--c-border);
+  --bs-btn-hover-bg: var(--c-surface-2);
+  --bs-btn-hover-border-color: var(--c-border);
+  --bs-btn-hover-color: var(--c-text);
+  --bs-btn-active-bg: var(--c-surface-2);
+  --bs-btn-active-border-color: var(--c-border);
+  --bs-btn-active-color: var(--c-text);
+}
+
+/* ---------- CRUD table (usuarios) ---------- */
+.tabla-c {
+  overflow-x: auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  background: var(--c-surface);
+}
+
+.tabla-c table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabla-c th,
+.tabla-c td {
+  padding: 0.7rem 1rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.tabla-c thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.tabla-c tbody tr + tr {
+  border-top: 1px solid var(--c-border);
+}
+
+.tabla-c tbody tr:hover {
+  background: var(--c-surface-2);
+}
+
+.tabla-c tbody th {
+  font-weight: 600;
+}
+
+.tabla-c .col-acciones {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.tabla-c .col-acciones .btn + .btn {
+  margin-left: 0.35rem;
+}
+
+/* "Nuevo usuario": a <details> whose summary looks like the block's button, so it works
+   with and without JavaScript. */
+.crud-alta {
+  margin-bottom: 1.25rem;
+}
+
+.crud-alta > summary {
+  list-style: none;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.crud-alta > summary::-webkit-details-marker {
+  display: none;
+}
+
+.crud-alta > summary::marker {
+  content: "";
+}
+
+.crud-alta[open] > summary {
+  margin-bottom: 0.85rem;
+}
+
+.crud-alta .panel-c {
+  max-width: none;
+}
+
+/* In-line result of an action sent without reloading the document. */
+.resultado-en-linea:focus {
+  outline: none;
+}
+
+/* Current key state of the account being edited: the panel never looks untouched. */
+.estado-llave {
+  margin: 0.85rem 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--c-border);
+  border-radius: var(--c-radius);
+  background: var(--c-surface-2);
+}
+
+.estado-llave .field-hint {
+  margin: 0.35rem 0 0;
+}
+
+.resultado-salida {
+  margin-top: 0.85rem;
+}
+
+.resultado-salida > summary {
+  cursor: pointer;
+  color: var(--c-muted);
+  font-size: 0.85rem;
+}
+
+.resultado-salida .terminal {
+  margin: 0.5rem 0 0;
+}
+
+#cuentas-titulo:focus {
+  outline: none;
 }
 
 /* ---------- Login message (/etc/issue) ---------- */

@@ -1,65 +1,90 @@
 {{define "content"}}
+<div class="page-narrow">
 <header class="page-head">
   <p class="eyebrow"><i class="bi {{.Module.Icon}}" aria-hidden="true"></i> Módulo</p>
   <h1>{{.Module.Title}}</h1>
   <p class="lead-c">{{.Module.Summary}}</p>
 </header>
 
-<section class="block" aria-labelledby="conectar-titulo">
-  <h2 id="conectar-titulo" class="block-title">Conectar por SSH</h2>
-  <p class="field-hint">La consola añade su propia llave a <span class="mono" translate="no">/root/.ssh/authorized_keys</span> de la VM usando el canal que ya tiene (ahora: <span class="mono">{{.Data.Canal}}</span>), guarda el archivo original la primera vez y comprueba que la sesión SSH de root responde. Si la prueba pasa, la barra superior muestra SSH y todas las operaciones siguientes van por ahí.</p>
-  <form class="panel-c form-c" method="post" action="/usuarios/conectar-ssh" data-operacion="Conectar por SSH" novalidate>
+{{/* Result of the action just answered without reloading the document. */}}
+{{with .Data.Resultado}}
+<section class="block resultado-en-linea" id="resultado-operacion" aria-labelledby="resultado-titulo" tabindex="-1">
+  <h2 id="resultado-titulo" class="block-title">Resultado de la operación</h2>
+  {{template "outcome-operacion" .}}
+  <details class="resultado-salida" open>
+    <summary>Ver la salida técnica</summary>
+    {{template "terminal-salida" .}}
+  </details>
+</section>
+{{end}}
+
+<section class="block" aria-labelledby="conexion-titulo">
+  <div class="block-head">
+    <h2 id="conexion-titulo" class="block-title">Conexión con la VM</h2>
+    <span class="badge-c {{if eq .Data.Canal "SSH"}}badge-ok{{else}}badge-warn{{end}}">
+      <i class="bi {{if eq .Data.Canal "SSH"}}bi-check-lg{{else}}bi-exclamation-triangle{{end}}" aria-hidden="true"></i>
+      {{.Data.Canal}}
+    </span>
+  </div>
+  {{if eq .Data.Canal "SSH"}}
+  <p class="field-hint">La consola administra la VM por SSH: las cuentas se crean, se editan y se eliminan por ese canal.</p>
+  {{else}}
+  <p class="field-hint">La consola añade su propia llave a <span class="mono" translate="no">/root/.ssh/authorized_keys</span> de la VM usando el canal que ya tiene (ahora: <span class="mono">{{.Data.Canal}}</span>), guarda el archivo original la primera vez y comprueba que la sesión SSH de root responde. Sin SSH no se pueden administrar las cuentas.</p>
+  <form class="panel-c form-c" method="post" action="/usuarios/conectar-ssh" data-crud data-operacion="Conectar por SSH" novalidate>
     {{if eq .Data.Formulario "conectar-ssh"}}{{template "resumen-errores" .Form}}{{end}}
     <div class="form-actions">
       <button class="btn btn-accent" type="submit"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Conectar por SSH</button>
     </div>
   </form>
+  {{end}}
 </section>
 
-<section class="block" aria-labelledby="crear-titulo">
-  <h2 id="crear-titulo" class="block-title">Crear usuario</h2>
-  <form class="panel-c form-c" method="post" action="/usuarios/crear" data-operacion="Crear la cuenta de usuario" novalidate>
-    {{if eq .Data.Formulario "crear"}}{{template "resumen-errores" .Form}}{{end}}
-    <p class="field-hint">Crea la cuenta en la VM con su carpeta <span class="mono" translate="no">/home</span> y sesión <span class="mono" translate="no">bash</span>. La contraseña viaja solo por el canal activo (nunca por <span class="mono">ps</span> ni por el registro). Si marcas «Generar llave SSH», el acceso por contraseña queda apagado <em>solo para este usuario</em> y podrás descargar su llave privada una sola vez durante 15 minutos.</p>
-    <label class="form-label" for="usuario">Nombre de usuario</label>
-    <input class="form-control" type="text" id="usuario" name="usuario" value="{{index .Form.Values "usuario"}}" autocomplete="off" spellcheck="false" translate="no" {{aria .Form "usuario" "usuario-ayuda"}}>
-    {{template "error-campo" (campo .Form "usuario")}}
-    <p class="field-hint" id="usuario-ayuda">Minúsculas, números, _ o -, empezando por letra o _. Ejemplo: <span class="mono" translate="no">daniel</span></p>
+<section class="block" id="cuentas" aria-labelledby="cuentas-titulo">
+  <div class="block-head">
+    <h2 id="cuentas-titulo" class="block-title">Cuentas de la VM</h2>
+    {{if and (not .Data.Confirmar) (ne .Data.Formulario "editar") (ne .Data.Formulario "eliminar") (eq .Data.Canal "SSH")}}
+    <span class="field-hint-inline">{{len .Data.Usuarios}} {{if eq (len .Data.Usuarios) 1}}cuenta{{else}}cuentas{{end}}</span>
+    {{end}}
+  </div>
 
-    <label class="form-label" for="contrasena">Contraseña</label>
-    <input class="form-control" type="password" id="contrasena" name="contrasena" autocomplete="new-password" {{aria .Form "contrasena" "contrasena-ayuda"}}>
-    {{template "error-campo" (campo .Form "contrasena")}}
-    <p class="field-hint" id="contrasena-ayuda">Entre 8 y 128 caracteres, sin «:» y sin saltos de línea. No se vuelve a mostrar aquí.</p>
+  {{if .Data.Confirmar}}
+  <div class="panel-c form-c" id="confirmar-eliminar">
+    <p class="field-hint">¿Eliminar a <strong class="mono" translate="no">{{.Data.Confirmar}}</strong>? Esta acción no se puede deshacer.{{if .Data.ConfirmarArchivos}} También se borrarán su carpeta <span class="mono" translate="no">/home/{{.Data.Confirmar}}</span> y sus archivos.{{end}}</p>
+    <form method="post" action="/usuarios/eliminar" data-crud data-operacion="Eliminar el usuario">
+      <input type="hidden" name="usuario" value="{{.Data.Confirmar}}">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="archivos" name="archivos" value="on"{{if .Data.ConfirmarArchivos}} checked{{end}}>
+        <label class="form-check-label" for="archivos">Eliminar todos los archivos</label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Eliminar</button>
+        <a class="btn btn-outline-c" href="/usuarios" data-crud>Cancelar</a>
+      </div>
+    </form>
+  </div>
 
-    <div class="form-check">
-      <input class="form-check-input" type="checkbox" id="sudo" name="sudo" value="on"{{if index .Form.Values "sudo"}} checked{{end}}>
-      <label class="form-check-label" for="sudo">Asignar privilegios de sudo</label>
-    </div>
-    <div class="form-check">
-      <input class="form-check-input" type="checkbox" id="llave" name="llave" value="on"{{if index .Form.Values "llave"}} checked{{end}}>
-      <label class="form-check-label" for="llave">Generar llave SSH</label>
-    </div>
-
-    <div class="form-actions">
-      <button class="btn btn-accent" type="submit"><i class="bi bi-person-plus" aria-hidden="true"></i> Crear usuario</button>
-    </div>
-  </form>
-</section>
-
-<section class="block" aria-labelledby="editar-titulo">
-  <h2 id="editar-titulo" class="block-title">Editar usuario</h2>
-  {{if eq .Data.Formulario "editar"}}
-  <form class="panel-c form-c" method="post" action="/usuarios/editar" data-operacion="Editar la cuenta de usuario" novalidate>
+  {{else if eq .Data.Formulario "editar"}}
+  <form class="panel-c form-c" method="post" action="/usuarios/editar" data-crud data-operacion="Editar la cuenta de usuario" novalidate>
     {{template "resumen-errores" .Form}}
-    <p class="field-hint">Edita la cuenta en la VM. Deja la contraseña vacía si no quieres cambiarla. Si marcas «Generar llave SSH», se regenerará el par de llaves (la anterior dejará de funcionar) y podrás descargar la nueva llave privada una sola vez durante 15 minutos.</p>
+    <p class="field-hint">Deja la contraseña vacía si no quieres cambiarla. Al marcar la casilla de la llave se crea un par nuevo (el anterior deja de funcionar) y podrás descargar la llave privada una sola vez durante 15 minutos.</p>
     <input type="hidden" name="usuario" value="{{index .Form.Values "usuario"}}">
     <label class="form-label" for="usuario">Nombre de usuario</label>
-    <input class="form-control" type="text" id="usuario" name="usuario" value="{{index .Form.Values "usuario"}}" readonly aria-describedby="usuario-ayuda">
+    <input class="form-control" type="text" id="usuario" name="usuario" value="{{index .Form.Values "usuario"}}" readonly aria-describedby="usuario-ayuda" translate="no">
     <p class="field-hint" id="usuario-ayuda">El nombre no se puede cambiar.</p>
 
-    <label class="form-label" for="nuevaContrasena">Nueva contraseña (opcional)</label>
-    <input class="form-control" type="password" id="nuevaContrasena" name="nuevaContrasena" autocomplete="new-password" {{aria .Form "nuevaContrasena" "contrasena-ayuda"}}>
-    {{template "error-campo" (campo .Form "nuevaContrasena")}}
+    <div class="estado-llave">
+      {{if .Data.LlaveSSH}}
+      <span class="badge-c badge-ok"><i class="bi bi-key-fill" aria-hidden="true"></i> Llave SSH instalada</span>
+      <p class="field-hint">Esta cuenta ya entra solo con llave: la contraseña está desactivada para ella en el sshd. Marca la casilla de abajo solo si quieres regenerarla.</p>
+      {{else}}
+      <span class="badge-c badge-muted"><i class="bi bi-key" aria-hidden="true"></i> Sin llave SSH</span>
+      <p class="field-hint">Sin llave, la cuenta entra con contraseña. Marca la casilla de abajo para crear el par y desactivar la contraseña solo para esta cuenta.</p>
+      {{end}}
+    </div>
+
+    <label class="form-label" for="contrasena">Nueva contraseña (opcional)</label>
+    <input class="form-control" type="password" id="contrasena" name="contrasena" autocomplete="new-password" {{aria .Form "contrasena" "contrasena-ayuda"}}>
+    {{template "error-campo" (campo .Form "contrasena")}}
     <p class="field-hint" id="contrasena-ayuda">Entre 8 y 128 caracteres, sin «:» y sin saltos de línea. Déjalo vacío para no cambiarla.</p>
 
     <div class="form-check">
@@ -68,57 +93,86 @@
     </div>
     <div class="form-check">
       <input class="form-check-input" type="checkbox" id="llave" name="llave" value="on"{{if index .Form.Values "llave"}} checked{{end}}>
-      <label class="form-check-label" for="llave">Generar/regenerar llave SSH</label>
+      <label class="form-check-label" for="llave">{{if .Data.LlaveSSH}}Regenerar llave SSH (la actual dejará de funcionar){{else}}Generar llave SSH{{end}}</label>
     </div>
 
     <div class="form-actions">
-      <button class="btn btn-accent" type="submit"><i class="bi bi-pencil" aria-hidden="true"></i> Guardar cambios</button>
-      <a class="btn btn-outline" href="/usuarios">Cancelar</a>
+      <button class="btn btn-accent" type="submit"><i class="bi bi-check-lg" aria-hidden="true"></i> Guardar cambios</button>
+      <a class="btn btn-outline-c" href="/usuarios" data-crud>Cancelar</a>
     </div>
   </form>
-  {{else}}
-  <p class="field-hint">Selecciona un usuario en la sección «Eliminar usuario» y pulsa «Editar» para modificar su contraseña, sudo o llave SSH.</p>
-  {{end}}
-</section>
 
-<section class="block" aria-labelledby="eliminar-titulo">
-  <h2 id="eliminar-titulo" class="block-title">Eliminar usuario</h2>
-  {{if .Data.Confirmar}}
-  <div class="panel-c form-c">
-    <p class="field-hint">¿Eliminar a <strong class="mono" translate="no">{{.Data.Confirmar}}</strong>? Esta acción no se puede deshacer.{{if .Data.ConfirmarArchivos}} También se borrarán su carpeta <span class="mono" translate="no">/home/{{.Data.Confirmar}}</span> y sus archivos.{{end}}</p>
-    <form method="post" action="/usuarios/eliminar" data-operacion="Eliminar el usuario">
-      <input type="hidden" name="usuario" value="{{.Data.Confirmar}}">
-      {{if .Data.ConfirmarArchivos}}<input type="hidden" name="archivos" value="on">{{end}}
+  {{else if eq .Data.Formulario "eliminar"}}
+  {{template "resumen-errores" .Form}}
+  {{with .Data.AvisoLista}}<p class="field-hint">{{.}}</p>{{end}}
+  <div class="form-actions">
+    <a class="btn btn-outline-c" href="/usuarios" data-crud><i class="bi bi-arrow-left" aria-hidden="true"></i> Volver a las cuentas</a>
+  </div>
+
+  {{else}}
+  <details class="crud-alta" id="nuevo-usuario"{{if eq .Data.Formulario "crear"}} open{{end}}>
+    <summary class="btn btn-accent"><i class="bi bi-person-plus" aria-hidden="true"></i> Nuevo usuario</summary>
+    <form class="panel-c form-c" method="post" action="/usuarios/crear" data-crud data-operacion="Crear la cuenta de usuario" novalidate>
+      {{if eq .Data.Formulario "crear"}}{{template "resumen-errores" .Form}}{{end}}
+      <p class="field-hint">Crea la cuenta en la VM con su carpeta <span class="mono" translate="no">/home</span> y sesión <span class="mono" translate="no">bash</span>. La contraseña viaja solo por el canal activo (nunca por <span class="mono">ps</span> ni por el registro). Si marcas «Generar llave SSH», el acceso por contraseña queda apagado <em>solo para este usuario</em> y podrás descargar su llave privada una sola vez durante 15 minutos.</p>
+      <label class="form-label" for="usuario">Nombre de usuario</label>
+      <input class="form-control" type="text" id="usuario" name="usuario" value="{{index .Form.Values "usuario"}}" autocomplete="off" spellcheck="false" translate="no" {{aria .Form "usuario" "usuario-ayuda"}}>
+      {{template "error-campo" (campo .Form "usuario")}}
+      <p class="field-hint" id="usuario-ayuda">Minúsculas, números, _ o -, empezando por letra o _. Ejemplo: <span class="mono" translate="no">daniel</span></p>
+
+      <label class="form-label" for="contrasena">Contraseña</label>
+      <input class="form-control" type="password" id="contrasena" name="contrasena" autocomplete="new-password" {{aria .Form "contrasena" "contrasena-ayuda"}}>
+      {{template "error-campo" (campo .Form "contrasena")}}
+      <p class="field-hint" id="contrasena-ayuda">Entre 8 y 128 caracteres, sin «:» y sin saltos de línea. No se vuelve a mostrar aquí.</p>
+
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="sudo" name="sudo" value="on"{{if index .Form.Values "sudo"}} checked{{end}}>
+        <label class="form-check-label" for="sudo">Asignar privilegios de sudo</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="llave" name="llave" value="on"{{if index .Form.Values "llave"}} checked{{end}}>
+        <label class="form-check-label" for="llave">Generar llave SSH</label>
+      </div>
+
       <div class="form-actions">
-        <button class="btn btn-outline-accent" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Eliminar</button>
-        <a class="btn btn-outline-accent" href="/usuarios">Cancelar</a>
+        <button class="btn btn-accent" type="submit"><i class="bi bi-person-plus" aria-hidden="true"></i> Crear usuario</button>
+        <button class="btn btn-outline-c" type="reset">Limpiar</button>
       </div>
     </form>
+  </details>
+
+  {{if .Data.Usuarios}}
+  <div class="tabla-c">
+    <table>
+      <caption class="visually-hidden">Cuentas de la VM que la consola puede administrar</caption>
+      <thead>
+        <tr>
+          <th scope="col">Cuenta</th>
+          <th scope="col" class="col-acciones">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{- range .Data.Usuarios}}
+        <tr>
+          <th scope="row" class="mono" translate="no">{{.}}</th>
+          <td class="col-acciones">
+            <a class="btn btn-sm btn-outline-accent" href="/usuarios/editar?usuario={{.}}" data-crud><i class="bi bi-pencil" aria-hidden="true"></i> Editar</a>
+            <a class="btn btn-sm btn-outline-accent" href="/usuarios?confirmar={{.}}" data-crud><i class="bi bi-trash3" aria-hidden="true"></i> Eliminar</a>
+          </td>
+        </tr>
+        {{- end}}
+      </tbody>
+    </table>
   </div>
+  <p class="field-hint">Solo aparecen cuentas normales (UID 1000 a 59999): nunca root ni la cuenta con la que la consola administra la VM.</p>
   {{else}}
-  <form class="panel-c form-c" id="form-eliminar" method="get" action="/usuarios" data-operacion="Eliminar el usuario" novalidate>
-    {{if eq .Data.Formulario "eliminar"}}{{template "resumen-errores" .Form}}{{end}}
-    <p class="field-hint">Elimina una cuenta normal de la VM y, si lo pides, todo lo que hay en su carpeta <span class="mono" translate="no">/home</span>. Antes de borrar nada, la consola pide confirmación en una segunda pantalla.</p>
-    {{if .Data.AvisoLista}}
-    <p class="field-hint">{{.Data.AvisoLista}}</p>
-    {{else}}
-    <label class="form-label" for="eliminar">Cuenta</label>
-    <select class="form-select" id="eliminar" name="confirmar" {{aria .Form "eliminar" "eliminar-ayuda"}}>
-      {{range .Data.Usuarios}}<option value="{{.}}">{{.}}</option>{{end}}
-    </select>
-    <p class="field-hint" id="eliminar-ayuda">Solo aparecen cuentas normales (UID 1000 a 59999): nunca root ni la cuenta con la que la consola administra la VM.</p>
-    <div class="form-check">
-      <input class="form-check-input" type="checkbox" id="archivos" name="archivos" value="on">
-      <label class="form-check-label" for="archivos">Eliminar todos los archivos</label>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-outline-accent" type="submit" id="btnEliminar"><i class="bi bi-trash3" aria-hidden="true"></i> Eliminar</button>
-      <button class="btn btn-outline" type="button" id="btnEditar"><i class="bi bi-pencil" aria-hidden="true"></i> Editar</button>
-    </div>
-    {{end}}
-  </form>
+  <div class="empty">
+    <i class="bi bi-people empty-icon" aria-hidden="true"></i>
+    <p class="empty-title">No hay cuentas para administrar</p>
+    <p class="empty-text">{{if .Data.AvisoLista}}{{.Data.AvisoLista}}{{else}}La VM no tiene cuentas normales: solo existen root, las cuentas del sistema y las que la consola necesita.{{end}}</p>
+  </div>
+  {{end}}
   {{end}}
 </section>
-
-<script src="/static/js/usuarios.js"></script>
+</div>
 {{end}}

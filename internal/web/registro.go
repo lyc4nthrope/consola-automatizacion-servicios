@@ -190,6 +190,19 @@ func (s *server) renderModule(w http.ResponseWriter, r *http.Request, slug strin
 	s.render(w, status, page, v)
 }
 
+// readForm reads the request body whether the browser sent it as
+// application/x-www-form-urlencoded (a plain HTML form) or as multipart/form-data (FormData
+// from the console's own script). ParseForm alone does not read a multipart body, so every
+// field would look empty and the validation would reject a form the user filled in.
+// ErrNotMultipart is the normal answer for a urlencoded form, not an error.
+func readForm(r *http.Request) error {
+	const maxMemoria = 1 << 20 // 1 MB: these forms are a handful of text fields
+	if err := r.ParseMultipartForm(maxMemoria); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		return err
+	}
+	return nil
+}
+
 // runAndShow runs plan and sends the browser to its result page (POST → redirect → GET).
 // Every module action that touches a VM ends with it.
 func (s *server) runAndShow(w http.ResponseWriter, r *http.Request, plan operacion.Plan) {

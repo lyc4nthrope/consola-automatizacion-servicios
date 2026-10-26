@@ -100,12 +100,14 @@ mv "$t" "$1"`
 
 // usuariosDatos is what the module's page template receives (as .Data).
 type usuariosDatos struct {
-	Canal             string   // the channel the current target uses right now
-	Formulario        string   // which form on this page owns the shown error report ("" = none)
-	Usuarios          []string // accounts B5 may delete (DB14); empty when the list could not be read
-	AvisoLista        string   // why the deletion form has no list (shown in its place)
-	Confirmar         string   // account waiting for the second screen ("" = show the deletion form)
-	ConfirmarArchivos bool     // "Eliminar todos los archivos" chosen on the first screen
+	Canal             string       // the channel the current target uses right now
+	Formulario        string       // which form on this page owns the shown error report ("" = none)
+	Usuarios          []string     // accounts B5 may delete (DB14); empty when the list could not be read
+	AvisoLista        string       // why the table has no accounts (shown in its place)
+	Confirmar         string       // account waiting for the second screen ("" = show the table)
+	ConfirmarArchivos bool         // "Eliminar todos los archivos" chosen on the first screen
+	Resultado         *oplog.Entry // last operation, shown in line when the page was not reloaded
+	LlaveSSH          bool         // the user already has the console's key setup (per-user drop-in)
 }
 
 // usuariosPagina shows the module. The deletion form lists the VM's own
@@ -116,6 +118,19 @@ type usuariosDatos struct {
 // links to ?confirmar=<u> (and ?archivos=on) so the template can render the
 // second screen with "Eliminar" and "Cancelar".
 func (s *server) usuariosPagina(w http.ResponseWriter, r *http.Request) {
+	datos := s.datosUsuarios(r)
+	consulta := r.URL.Query()
+	if confirmar := strings.TrimSpace(consulta.Get("confirmar")); confirmar != "" && contieneCuenta(datos.Usuarios, confirmar) {
+		datos.Confirmar = confirmar
+		datos.ConfirmarArchivos = consulta.Get("archivos") != ""
+	}
+	s.renderModule(w, r, "usuarios", http.StatusOK, Form{}, datos)
+}
+
+// datosUsuarios builds the page data: the active channel and the deletable accounts (a read
+// through getent, never an operation in the log). Without a channel it explains why the table
+// has no rows. Used by the page and by the fragment a finished action returns.
+func (s *server) datosUsuarios(r *http.Request) usuariosDatos {
 	cur := s.state.Current()
 	datos := usuariosDatos{Canal: s.state.Channel(cur.Name)}
 	if ex, hayCanal := s.state.Executor(cur.Name); hayCanal {
@@ -123,11 +138,20 @@ func (s *server) usuariosPagina(w http.ResponseWriter, r *http.Request) {
 	} else {
 		datos.AvisoLista = "La consola todavía no tiene canal con la VM: usa «Conectar por SSH» para poder listar y eliminar cuentas."
 	}
-	consulta := r.URL.Query()
-	if confirmar := strings.TrimSpace(consulta.Get("confirmar")); confirmar != "" && contieneCuenta(datos.Usuarios, confirmar) {
-		datos.Confirmar = confirmar
-		datos.ConfirmarArchivos = consulta.Get("archivos") != ""
+	return datos
+}
+
+// terminarEnUsuarios ends an action of the users page. A normal request keeps the classic
+// POST → redirect → GET /resultado/<id>. A fragment request (X-Consola-Parcial) gets the page
+// content back with status 200: the outcome in line and the account list re-read, so the table
+// already shows the change without reloading the document.
+func (s *server) terminarEnUsuarios(w http.ResponseWriter, r *http.Request, e oplog.Entry) {
+	if !esParcial(r) {
+		http.Redirect(w, r, "/resultado/"+e.ID, http.StatusSeeOther)
+		return
 	}
+	datos := s.datosUsuarios(r)
+	datos.Resultado = &e
 	s.renderModule(w, r, "usuarios", http.StatusOK, Form{}, datos)
 }
 
@@ -190,16 +214,22 @@ func (s *server) conectarSSH(w http.ResponseWriter, r *http.Request) {
 		s.renderModule(w, r, "usuarios", http.StatusInternalServerError, Form{Errors: map[string]string{"": err.Error()}}, datos)
 		return
 	}
-	s.runAndShow(w, r, planConectarSSH(cur.Name, pub))
-	// The redirect from runAndShow waits in the ResponseWriter's buffer until
-	// this handler returns (net/http), so the probe and the switch below are
-	// settled before the browser loads the result page: its top bar already
-	// shows SSH. When the probe refuses, the channel stays as it was — the
-	// user can try again without any half state.
+	e, pudo, escrito := s.runPaso(w, r, planConectarSSH(cur.Name, pub))
+	if escrito {
+		return
+	}
+	if !pudo {
+		s.porFallo(w, r, cur.Name, "", e, true, "", operacion.Plan{})
+		return
+	}
+	// The probe and the switch happen before the response leaves, so the page that follows
+	// already shows SSH in the top bar. When the probe refuses, the channel stays as it was —
+	// the user can try again without any half state.
 	ex := llaves.SSHForTarget(cur, llaves.Dir)
 	if llaves.ProveSSH(ex) == nil {
 		_ = s.state.SetExecutor(cur.Name, ex)
 	}
+	s.terminarEnUsuarios(w, r, e)
 }
 
 // planConectarSSH reads the VM's authorized_keys (a marker when there is no
@@ -498,7 +528,10 @@ func (s *server) porFallo(w http.ResponseWriter, r *http.Request, target string,
 		}
 	}
 	if guardado && aviso.ID != "" {
-		http.Redirect(w, r, "/resultado/"+aviso.ID, http.StatusSeeOther)
+		// The users actions finish with the outcome on this page when the request is a
+		// fragment; root's key flow lives on the preparación page and only ever arrives as
+		// a full page, so it keeps the redirect to the result page.
+		s.terminarEnUsuarios(w, r, aviso)
 		return
 	}
 	http.Error(w, "No se pudo explicar en el registro lo que falló en la operación. Revisa el registro de la consola en la terminal.", http.StatusInternalServerError)
@@ -612,6 +645,20 @@ func dropInTemporalUsuario(usuario string) string {
 	return "/tmp/" + llaves.NombreDropInUsuario(usuario)
 }
 
+// rutaDropInDe names the installed per-user sshd drop-in: when it exists, password logins are
+// off for that account, which is what "this user already uses the key" means for the console.
+func rutaDropInDe(usuario string) string {
+	return "/etc/ssh/sshd_config.d/" + llaves.NombreDropInUsuario(usuario)
+}
+
+// llaveInstalada reports whether the user already has the console's key setup. It is a read
+// through the active channel: it changes nothing and is not logged as an operation, the same
+// way the account list and the sudo state are read when the page opens.
+func llaveInstalada(ctx context.Context, ex executor.Executor, usuario string) bool {
+	res, err := ex.Run(ctx, executor.Command{Name: "test", Args: []string{"-e", rutaDropInDe(usuario)}})
+	return err == nil && res.ExitCode == 0
+}
+
 // limpiezaLlavesUsuario is the cleanup the user-key flow runs when it stops
 // early; with no directory yet there is nothing to clean (an empty plan, whose
 // empty Target porFallo understands as "run nothing").
@@ -690,7 +737,7 @@ func valoresDeFormulario(usuario string, sudo, llave bool) map[string]string {
 func (s *server) usuarioCrear(w http.ResponseWriter, r *http.Request) {
 	cur := s.state.Current()
 	ex, hayCanal := s.state.Executor(cur.Name)
-	datos := usuariosDatos{Canal: s.state.Channel(cur.Name)}
+	datos := usuariosDatos{Canal: s.state.Channel(cur.Name), Formulario: "crear"}
 	mostrar := func(estado int, form Form) {
 		s.renderModule(w, r, "usuarios", estado, form, datos)
 	}
@@ -698,7 +745,7 @@ func (s *server) usuarioCrear(w http.ResponseWriter, r *http.Request) {
 		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "Para crear un usuario, la VM ya debe estar conectada por SSH: primero usa «Conectar por SSH»."}})
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := readForm(r); err != nil {
 		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "No se pudo leer el formulario. Vuelve a intentarlo."}})
 		return
 	}
@@ -744,7 +791,7 @@ func (s *server) usuarioCrear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !llave {
-		http.Redirect(w, r, "/resultado/"+eB.ID, http.StatusSeeOther)
+		s.terminarEnUsuarios(w, r, eB)
 		return
 	}
 
@@ -876,8 +923,8 @@ func (s *server) usuarioEliminar(w http.ResponseWriter, r *http.Request) {
 	datos := usuariosDatos{Canal: s.state.Channel(cur.Name), Formulario: "eliminar"}
 	mostrar := func(estado int, form Form) {
 		// A rejected form sends NO command (DB14's test asks for exactly that),
-		// so the list is not re-read here: the page tells the user to reload it.
-		datos.AvisoLista = "Vuelve a abrir esta página para ver la lista de cuentas."
+		// so the list is not re-read here: the page offers a link back to it.
+		datos.AvisoLista = "No se eliminó ninguna cuenta. Vuelve a las cuentas para ver la lista actualizada."
 		s.renderModule(w, r, "usuarios", estado, form, datos)
 	}
 	ex, hayCanal := s.state.Executor(cur.Name)
@@ -885,7 +932,7 @@ func (s *server) usuarioEliminar(w http.ResponseWriter, r *http.Request) {
 		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "Para eliminar un usuario, la VM ya debe estar conectada por SSH: primero usa «Conectar por SSH»."}})
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := readForm(r); err != nil {
 		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "No se pudo leer el formulario. Vuelve a intentarlo."}})
 		return
 	}
@@ -908,7 +955,7 @@ func (s *server) usuarioEliminar(w http.ResponseWriter, r *http.Request) {
 		s.porFallo(w, r, cur.Name, "", e, true, "", operacion.Plan{})
 		return
 	}
-	http.Redirect(w, r, "/resultado/"+e.ID, http.StatusSeeOther)
+	s.terminarEnUsuarios(w, r, e)
 }
 
 // usuarioEditarGET shows the edit form for an existing user. It reads the
@@ -916,7 +963,7 @@ func (s *server) usuarioEliminar(w http.ResponseWriter, r *http.Request) {
 // and renders the edit form with the current sudo status.
 func (s *server) usuarioEditarGET(w http.ResponseWriter, r *http.Request) {
 	cur := s.state.Current()
-	datos := usuariosDatos{Canal: s.state.Channel(cur.Name)}
+	datos := usuariosDatos{Canal: s.state.Channel(cur.Name), Formulario: "editar"}
 	mostrar := func(estado int, form Form) {
 		s.renderModule(w, r, "usuarios", estado, form, datos)
 	}
@@ -950,12 +997,12 @@ func (s *server) usuarioEditarGET(w http.ResponseWriter, r *http.Request) {
 	if err == nil && resGrupos.ExitCode == 0 {
 		sudoActual = strings.Contains(resGrupos.Stdout, "sudo")
 	}
+	// Y si la cuenta ya tiene la llave de la consola: el panel lo dice en vez de parecer vacío.
+	datos.LlaveSSH = llaveInstalada(r.Context(), ex, usuario)
 	form := Form{
 		Values: map[string]string{
-			"usuario":      usuario,
-			"sudo":         boolToOn(sudoActual),
-			"nuevaContrasena": "",
-			"llave":        "off",
+			"usuario": usuario,
+			"sudo":    boolToOn(sudoActual),
 		},
 	}
 	mostrar(http.StatusOK, form)
@@ -973,7 +1020,7 @@ func boolToOn(b bool) string {
 // checkbox is on, chains the SSH key generation flow (same as usuarioCrear).
 func (s *server) usuarioEditarPOST(w http.ResponseWriter, r *http.Request) {
 	cur := s.state.Current()
-	datos := usuariosDatos{Canal: s.state.Channel(cur.Name)}
+	datos := usuariosDatos{Canal: s.state.Channel(cur.Name), Formulario: "editar"}
 	mostrar := func(estado int, form Form) {
 		s.renderModule(w, r, "usuarios", estado, form, datos)
 	}
@@ -982,26 +1029,31 @@ func (s *server) usuarioEditarPOST(w http.ResponseWriter, r *http.Request) {
 		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "Para editar un usuario, la VM ya debe estar conectada por SSH: primero usa «Conectar por SSH»."}})
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := readForm(r); err != nil {
 		mostrar(http.StatusUnprocessableEntity, Form{Errors: map[string]string{"": "No se pudo leer el formulario. Vuelve a intentarlo."}})
 		return
 	}
 	usuario := strings.TrimSpace(r.PostForm.Get("usuario"))
-	nuevaContrasena := r.PostForm.Get("nuevaContrasena")
+	nuevaContrasena := r.PostForm.Get("contrasena")
 	sudo := r.PostForm.Get("sudo") != ""
 	llave := r.PostForm.Get("llave") != ""
 
-	if err := validate.Usuario(usuario); err != nil {
-		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario, "sudo": boolToOn(sudo)}, Errors: FieldErrors(err)})
+	errUsuario := validate.Usuario(usuario)
+	if errUsuario == nil {
+		// Same read as the GET, so a rejected form still says whether the account has a key.
+		datos.LlaveSSH = llaveInstalada(r.Context(), ex, usuario)
+	}
+	if errUsuario != nil {
+		mostrar(http.StatusUnprocessableEntity, Form{Values: valoresDeFormulario(usuario, sudo, llave), Errors: FieldErrors(errUsuario)})
 		return
 	}
 	if protegidosDe(cur)[usuario] {
-		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario}, Errors: map[string]string{"usuario": "No se puede editar la cuenta «" + usuario + "»: la consola la necesita para seguir administrando la VM."}})
+		mostrar(http.StatusUnprocessableEntity, Form{Values: valoresDeFormulario(usuario, sudo, llave), Errors: map[string]string{"usuario": "No se puede editar la cuenta «" + usuario + "»: la consola la necesita para seguir administrando la VM."}})
 		return
 	}
 	if nuevaContrasena != "" {
 		if err := validate.Contrasena(nuevaContrasena); err != nil {
-			mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario, "sudo": boolToOn(sudo)}, Errors: FieldErrors(err)})
+			mostrar(http.StatusUnprocessableEntity, Form{Values: valoresDeFormulario(usuario, sudo, llave), Errors: FieldErrors(err)})
 			return
 		}
 	}
@@ -1009,7 +1061,7 @@ func (s *server) usuarioEditarPOST(w http.ResponseWriter, r *http.Request) {
 	// Verificar que el usuario existe
 	res, err := ex.Run(r.Context(), executor.Command{Name: "getent", Args: []string{"passwd", usuario}})
 	if err != nil || res.ExitCode != 0 {
-		mostrar(http.StatusUnprocessableEntity, Form{Values: map[string]string{"usuario": usuario}, Errors: map[string]string{"usuario": "El usuario no existe en la VM."}})
+		mostrar(http.StatusUnprocessableEntity, Form{Values: valoresDeFormulario(usuario, sudo, llave), Errors: map[string]string{"usuario": "El usuario no existe en la VM."}})
 		return
 	}
 
@@ -1025,7 +1077,7 @@ func (s *server) usuarioEditarPOST(w http.ResponseWriter, r *http.Request) {
 
 	// Paso 2: Si se pidió llave, ejecutar el flujo de generación/instalación
 	if !llave {
-		http.Redirect(w, r, "/resultado/"+eA.ID, http.StatusSeeOther)
+		s.terminarEnUsuarios(w, r, eA)
 		return
 	}
 
@@ -1139,7 +1191,7 @@ func (s *server) usuarioEditarPOST(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s: %v", "Borrar los temporales de las llaves del usuario", err)
 	}
 
-http.Redirect(w, r, "/usuarios/llaves/listo/"+token+"?id="+eD.ID, http.StatusSeeOther)
+	http.Redirect(w, r, "/usuarios/llaves/listo/"+token+"?id="+eD.ID, http.StatusSeeOther)
 }
 
 // llaveLista is the page the browser lands on after the flow: it offers the
