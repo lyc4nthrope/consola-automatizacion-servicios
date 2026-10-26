@@ -19,6 +19,10 @@ import (
 const ensureUserScript = `id -u "$1" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$1"
 install -d -m 750 -o "$1" -g "$1" "/var/lib/$1"`
 
+// isActiveScript prints the unit state (active, inactive, failed...) for the deploy
+// message. systemctl is-active exits 3 for a stopped unit; that is a state, not a failure.
+const isActiveScript = `systemctl is-active -- "$1" || true`
+
 // aplicacionesDir is the host folder with one subfolder per application that can be
 // deployed. Tests point it to a temporary folder.
 var aplicacionesDir = "aplicaciones"
@@ -155,6 +159,7 @@ func planDesplegar(target string, cfg servicios.Config, app string, paquete []by
 		executor.Command{Name: "sh", Args: []string{"-c", writeUnitScript, "sh", servicios.UnitFile(cfg), unitPath}},
 		executor.Command{Name: "systemctl", Args: []string{"enable", "--", cfg.Name}},
 		executor.Command{Name: "systemctl", Args: []string{"try-restart", "--", cfg.Name}},
+		executor.Command{Name: "sh", Args: []string{"-c", isActiveScript, "sh", cfg.Name}},
 	)
 
 	return operacion.Plan{
@@ -162,8 +167,12 @@ func planDesplegar(target string, cfg servicios.Config, app string, paquete []by
 		Target:   target,
 		Commands: cmds,
 		Timeout:  2 * time.Minute,
-		Success: func([]executor.Result) string {
-			return fmt.Sprintf("«%s» quedó instalado en %s y habilitado como servicio «%s». Usa «Iniciar (start)» en el formulario de acciones para arrancarlo.", app, dir, cfg.Name)
+		Success: func(res []executor.Result) string {
+			base := fmt.Sprintf("«%s» quedó instalado en %s y habilitado como servicio «%s».", app, dir, cfg.Name)
+			if len(res) > 0 && strings.TrimSpace(res[len(res)-1].Stdout) == "active" {
+				return base + " Ya estaba en ejecución, así que se reinició con el programa nuevo y sigue corriendo."
+			}
+			return base + " Usa «Iniciar (start)» en el formulario de acciones para arrancarlo."
 		},
 	}
 }

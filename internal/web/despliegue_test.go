@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -54,8 +55,8 @@ func TestDeployCreatesTheServiceUserBeforeTheUnit(t *testing.T) {
 	if p.Commands[user].Args[3] != "bookzilla" {
 		t.Errorf("user script args = %v", p.Commands[user].Args)
 	}
-	last := p.Commands[len(p.Commands)-1].String()
-	if last != "systemctl try-restart -- bookzilla" || index(p.Commands, "systemctl enable -- bookzilla") < unit {
+	restart := index(p.Commands, "systemctl try-restart -- bookzilla")
+	if restart < 0 || index(p.Commands, "systemctl enable -- bookzilla") < unit || restart < unit {
 		t.Errorf("the unit must be enabled, then a running service restarted: %v", p.Commands)
 	}
 }
@@ -152,5 +153,34 @@ func TestServicesPageOffersOnlyTheSixActions(t *testing.T) {
 	}
 	if bytes.Contains([]byte(page), []byte(`value="reload"`)) {
 		t.Error("reload is not one of the six actions")
+	}
+}
+
+// The deploy message says what really happened: a service that was already running was
+// restarted with the new program; a stopped one waits for the Start button.
+func TestDeployMessageFollowsTheServiceState(t *testing.T) {
+	p := planDesplegar("pruebas", servicioEjemplo, "bookzilla", []byte("x"))
+	last := p.Commands[len(p.Commands)-1]
+	if last.Name != "sh" || last.Args[1] != isActiveScript || last.Args[3] != "bookzilla" {
+		t.Fatalf("last command = %v", last)
+	}
+	if got := p.Success([]executor.Result{{Stdout: "active\n"}}); !strings.Contains(got, "se reinició con el programa nuevo") {
+		t.Errorf("running: %q", got)
+	}
+	if got := p.Success([]executor.Result{{Stdout: "inactive\n"}}); !strings.Contains(got, "Iniciar (start)") {
+		t.Errorf("stopped: %q", got)
+	}
+}
+
+// The real script with a stand-in for systemctl: a stopped unit (exit 3) still reports its
+// state and does not fail the deployment.
+func TestIsActiveScriptInARealShell(t *testing.T) {
+	bin := t.TempDir()
+	_ = os.WriteFile(filepath.Join(bin, "systemctl"), []byte("#!/bin/sh\necho inactive\nexit 3\n"), 0o755)
+	cmd := exec.Command("/bin/sh", "-c", isActiveScript, "sh", "bookzilla")
+	cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin"}
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) != "inactive" {
+		t.Fatalf("out %q, err %v", out, err)
 	}
 }
