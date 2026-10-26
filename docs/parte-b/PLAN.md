@@ -140,12 +140,12 @@ docs/parte-b/                         plan y notas
 
 | Fase | Objetivo | Fecha | Estado |
 |---|---|---|---|
-| B0 | Preparación | dom 18 – lun 19 | ⬜ |
-| B1 | Adaptador SSH | lun 19 – **mar 20** (entrega a C) | ⬜ |
-| B2 | Bootstrap: Guest Additions → SSH | mar 20 | ⬜ |
-| B3 | Llaves de root y descarga | mar 20 – mié 21 | ⬜ |
-| B4 | Crear usuario | mié 21 | ⬜ |
-| B5 | Eliminar usuario | mié 21 | ⬜ |
+| B0 | Preparación | dom 18 – lun 19 | 🟡 código y pruebas en `integracion`; falta probar en VM real |
+| B1 | Adaptador SSH | lun 19 – **mar 20** (entrega a C) | 🟡 código y pruebas en `integracion`; falta probar en VM real |
+| B2 | Bootstrap: Guest Additions → SSH | mar 20 | 🟡 código y pruebas en `integracion`; falta probar en VM real |
+| B3 | Llaves de root y descarga | mar 20 – mié 21 | 🟡 código y pruebas en `integracion`; falta probar en VM real |
+| B4 | Crear usuario | mié 21 | 🟡 código y pruebas en `integracion`; falta probar en VM real |
+| B5 | Eliminar usuario | mié 21 | 🟡 código y pruebas en `integracion`; falta probar en VM real |
 | B6 | Videos V5–V8 | vie 23 | ⬜ |
 | B7 | Consolidar el documento | vie 23 – sáb 24 | ⬜ |
 

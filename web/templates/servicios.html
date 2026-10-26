@@ -1,0 +1,87 @@
+{{define "content"}}
+<header class="page-head">
+  <p class="eyebrow"><i class="bi {{.Module.Icon}}" aria-hidden="true"></i> Módulo</p>
+  <h1>{{.Module.Title}}</h1>
+  <p class="lead-c">{{.Module.Summary}}</p>
+</header>
+
+<section class="block" aria-labelledby="desplegar-titulo">
+  <h2 id="desplegar-titulo" class="block-title">Desplegar aplicación como servicio</h2>
+  <form class="panel-c form-c" method="post" action="/servicios/desplegar" data-operacion="Desplegar servicio" novalidate>
+    {{if .Data}}{{if eq .Data.Formulario "desplegar"}}{{template "resumen-errores" $.Form}}{{end}}{{end}}
+    
+    <label class="form-label" for="aplicacion">Aplicación a desplegar</label>
+    <select class="form-select mono" id="aplicacion" name="aplicacion" {{aria .Form "aplicacion" "aplicacion-ayuda"}}>
+      <option value="">-- Selecciona una aplicación --</option>
+      {{if .Data}}{{- range .Data.Aplicaciones}}
+      <option value="{{.}}" {{if eq (index $.Form.Values "aplicacion") .}}selected{{end}}>{{.}}</option>
+      {{- end}}{{end}}
+    </select>
+    {{template "error-campo" (campo .Form "aplicacion")}}
+    <p class="field-hint" id="aplicacion-ayuda">Carpeta detectada en el directorio local <span class="mono">aplicaciones/</span>.</p>
+
+    <label class="form-label" for="servicio">Nombre del servicio systemd</label>
+    <input class="form-control mono" id="servicio" name="servicio" type="text" value="{{index .Form.Values "servicio"}}"
+      maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "servicio" "servicio-ayuda"}}>
+    {{template "error-campo" (campo .Form "servicio")}}
+    <p class="field-hint" id="servicio-ayuda">Nombre de la unidad sin extensión, por ejemplo <span class="mono" translate="no">bookzilla</span>.</p>
+
+    <label class="form-label" for="ejecutable">Nombre del ejecutable</label>
+    <input class="form-control mono" id="ejecutable" name="ejecutable" type="text" value="{{index .Form.Values "ejecutable"}}"
+      maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "ejecutable" "ejecutable-ayuda"}}>
+    {{template "error-campo" (campo .Form "ejecutable")}}
+    <p class="field-hint" id="ejecutable-ayuda">Nombre del ejecutable dentro de la carpeta (se instalará en <span class="mono" translate="no">/opt/&lt;app&gt;/&lt;ejecutable&gt;</span>).</p>
+
+    <label class="form-label" for="puerto">Puerto de escucha (Opcional)</label>
+    <input class="form-control mono" id="puerto" name="puerto" type="text" value="{{index .Form.Values "puerto"}}"
+      maxlength="5" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "puerto" "puerto-ayuda"}}>
+    {{template "error-campo" (campo .Form "puerto")}}
+    <p class="field-hint" id="puerto-ayuda">Puerto TCP (1-65535) en el que escucha la aplicación, por ejemplo <span class="mono" translate="no">8080</span>.</p>
+
+    <div class="form-check my-3">
+      <input class="form-check-input" type="checkbox" id="oneshot" name="oneshot" value="on" {{if eq (index .Form.Values "oneshot") "on"}}checked{{end}}>
+      <label class="form-check-label" for="oneshot">
+        Tarea única (oneshot / script de fecha)
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-hdd-stack" aria-hidden="true"></i> Desplegar Servicio</button>
+    </div>
+  </form>
+</section>
+
+<section class="block" aria-labelledby="acciones-titulo">
+  <h2 id="acciones-titulo" class="block-title">Control de ciclo de vida de servicios</h2>
+  <form class="panel-c form-c" method="post" action="/servicios/accion" data-operacion="Ejecutar acción de servicio" novalidate>
+    {{if .Data}}{{if eq .Data.Formulario "accion"}}{{template "resumen-errores" $.Form}}{{end}}{{end}}
+
+    <label class="form-label" for="servicio-accion">Nombre del servicio</label>
+    <input class="form-control mono" id="servicio-accion" name="servicio" type="text" value="{{index .Form.Values "servicio"}}"
+      maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" translate="no"
+      {{aria .Form "servicio-accion" "servicio-accion-ayuda"}}>
+    {{template "error-campo" (campo .Form "servicio")}}
+    <p class="field-hint" id="servicio-accion-ayuda">Nombre de la unidad systemd registrada, por ejemplo <span class="mono" translate="no">cron</span> o <span class="mono" translate="no">bookzilla</span>.</p>
+
+    <label class="form-label" for="accion">Acción a ejecutar</label>
+    <select class="form-select mono" id="accion" name="accion" {{aria .Form "accion" "accion-ayuda"}}>
+      <option value="status" {{if eq (index .Form.Values "accion") "status"}}selected{{end}}>Consultar estado (status)</option>
+      <option value="start" {{if eq (index .Form.Values "accion") "start"}}selected{{end}}>Iniciar (start)</option>
+      <option value="stop" {{if eq (index .Form.Values "accion") "stop"}}selected{{end}}>Detener (stop)</option>
+      <option value="restart" {{if eq (index .Form.Values "accion") "restart"}}selected{{end}}>Reiniciar (restart)</option>
+      <option value="reload" {{if eq (index .Form.Values "accion") "reload"}}selected{{end}}>Recargar configuración (reload)</option>
+      <option value="enable" {{if eq (index .Form.Values "accion") "enable"}}selected{{end}}>Habilitar al arranque (enable)</option>
+      <option value="disable" {{if eq (index .Form.Values "accion") "disable"}}selected{{end}}>Deshabilitar del arranque (disable)</option>
+    </select>
+    {{template "error-campo" (campo .Form "accion")}}
+    <p class="field-hint" id="accion-ayuda">Comando de <span class="mono">systemctl</span> que se aplicará sobre la VM objetivo.</p>
+
+    <div class="form-actions">
+      <button class="btn btn-accent" type="submit"><i class="bi bi-play-circle" aria-hidden="true"></i> Ejecutar Acción</button>
+    </div>
+  </form>
+</section>
+{{end}}

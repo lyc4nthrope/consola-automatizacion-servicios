@@ -670,7 +670,7 @@ func repertorioLlaveDeUsuario(dirLlaves, merge string) []executor.Command {
 		{Name: "install", Args: []string{"-m", "644", "-o", "root", "-g", "root", "--", dropIn, "/etc/ssh/sshd_config.d/20-consola-daniel.conf"}},
 		{Name: "sh", Args: []string{"-c", sshdPruebaScript, "sh", "/etc/ssh/sshd_config.d/20-consola-daniel.conf"}},
 		{Name: "systemctl", Args: []string{"reload", "ssh"}},
-		{Name: "sh", Args: []string{"-c", fmt.Sprintf(dropInVerificadoScriptFmt, "daniel")}},
+		{Name: "sh", Args: []string{"-c", dropInVerificadoScriptFmt, "sh", "daniel"}},
 		{Name: "rm", Args: []string{"-rf", "--", temporal}},
 		{Name: "rm", Args: []string{"-f", "--", dropIn}},
 	}

@@ -673,7 +673,7 @@ func limpiezaLlavesUsuario(target, dirVM, usuario string) operacion.Plan {
 // after the reload, the EFFECTIVE sshd for exactly this user must say that
 // password logins are off. Anything else (also an unreadable "sshd -T") exits
 // 12, and the console treats it as "the change did not take, stop here".
-const dropInVerificadoScriptFmt = "set -e\nv=$(sshd -T -C user=%s,host=consola,addr=127.0.0.1 | grep -i '^passwordauthentication ') || true\ncase \"$v\" in\n  *\" no\"*) exit 0 ;;\nesac\nexit 12"
+const dropInVerificadoScriptFmt = "set -e\nv=$(sshd -T -C user=\"$1\",host=consola,addr=127.0.0.1 | grep -i '^passwordauthentication ') || true\ncase \"$v\" in\n  *\" no\"*) exit 0 ;;\nesac\nexit 12"
 
 // planConfigurarSSHUsuario installs the staged per-user drop-in into
 // /etc/ssh/sshd_config.d/, gates the reload on sshd -t (a rejected config
@@ -686,7 +686,7 @@ func planConfigurarSSHUsuario(target, usuario string) operacion.Plan {
 	instalar := executor.Command{Name: "install", Args: []string{"-m", "644", "-o", "root", "-g", "root", "--", temporal, destino}}
 	prueba := executor.Command{Name: "sh", Args: []string{"-c", sshdPruebaScript, "sh", destino}}
 	recargar := executor.Command{Name: "systemctl", Args: []string{"reload", "ssh"}}
-	verificar := executor.Command{Name: "sh", Args: []string{"-c", fmt.Sprintf(dropInVerificadoScriptFmt, usuario)}}
+	verificar := executor.Command{Name: "sh", Args: []string{"-c", dropInVerificadoScriptFmt, "sh", usuario}}
 	return operacion.Plan{
 		Action:   "Configurar el acceso del usuario por SSH",
 		Target:   target,
