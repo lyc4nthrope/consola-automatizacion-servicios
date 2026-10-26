@@ -92,7 +92,10 @@ La consola se ejecuta desde la carpeta que tiene `config.json` y `keys/`. Para c
 make test                                                      # pruebas sin VMs
 make check                                                     # lo mismo que la CI: formato, vet, pruebas y compilación
 make vm-test VM=consola-pruebas PASSFILE=keys/guest-pass-pruebas   # contra una VM real por Guest Additions
+scripts/prueba-completa.sh                                     # todo el parcial contra la VM real, con la consola en marcha
 ```
+
+La prueba completa usa cada módulo desde sus formularios y verifica el efecto dentro de la VM. Requisitos y último resultado en [docs/PRUEBA-COMPLETA.md](docs/PRUEBA-COMPLETA.md).
 
 ## Estructura
 

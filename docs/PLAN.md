@@ -16,6 +16,7 @@
 | [Plan de la Parte A](parte-a/PLAN.md) | Cristhian | Plataforma, preparación del sistema, Guest Additions, diseño de la interfaz |
 | [Plan de la Parte B](parte-b/PLAN.md) | Daniel | Canal SSH, bootstrap, llaves de root, usuarios, documento final |
 | [Plan de la Parte C](parte-c/PLAN.md) | Wiliam | VMs de prueba, servicios systemd, HAProxy, diagrama |
+| [Prueba completa](PRUEBA-COMPLETA.md) | Todo el equipo | Cómo comprobar todo el parcial contra la VM real con `scripts/prueba-completa.sh`, y su último resultado |
 | [Guía de la base](base-para-modulos.md) | Partes B y C (y su asistente de IA) | API para construir un módulo: registro de rutas, operaciones, validación, formularios, pruebas |
 | [Reglas de seguridad](../.claude/claude-security-guidance.md) | Todos (y el revisor automático) | Lo que nunca debe pasar en el código y qué usar en su lugar |
 
@@ -330,3 +331,40 @@ Regla para cerrar cada punto: `make check` en verde + **prueba en VM real con an
 - No se probó **nada de B ni de C contra una VM real** durante la integración: solo pruebas automáticas con el canal simulado.
 - Mientras no exista C-1, "Desplegar" no copia la aplicación desde el host.
 - "Quitar servidor" quita **todos** los servidores de ese back-end que tengan esa IP (por ejemplo, la misma VM en dos puertos).
+
+---
+
+## 9. Estado al 26 de octubre: el plan contra la rama `main`
+
+Todas las ramas (`cristhian`, `daniel`, `wiliam`, `wiliam-final`, `integracion`, `dev`) están unidas en **`main`**. Las tablas de fases del §4 se quedaron en ⬜ porque cada parte llevó su estado en su propio plan; esta tabla es el estado real, con la evidencia de cada fase. La prueba completa ([PRUEBA-COMPLETA.md](PRUEBA-COMPLETA.md)) recorre todo contra la VM real.
+
+| Fase | Estado | Evidencia |
+|---|---|---|
+| A1 Esqueleto web | ✅ | Pruebas `httptest` de cada ruta; video de la Parte A |
+| A2 `GuestControl` | ✅ | Prueba completa: primer contacto por Guest Additions |
+| A3 `validate` + `oplog` | ✅ | Pruebas de tabla; prueba completa: 5 entradas maliciosas rechazadas sin ejecutar nada; registro con permisos 600 |
+| A4 Instalar / eliminar | ✅ | Video A; prueba completa (`tree`, paquete inexistente) |
+| A5 `/etc/issue` | ✅ | Video A; prueba completa (instalar y restaurar) |
+| A6 Hostname + `/etc/hosts` | ✅ | Video A; prueba completa |
+| B1 Adaptador SSH | ✅ | Prueba completa: todo después del bootstrap va por SSH |
+| B2 Bootstrap Guest Additions → SSH | ✅ | Video B; prueba completa |
+| B3 Llaves de root + descarga | ✅ | Video B; prueba completa (descarga única, entrar con la llave, `prohibit-password`) |
+| B4 Crear usuario | ✅ | Video B; prueba completa (sudo, llave, `passwordauthentication no`). `sudo -l` no se comprueba |
+| B5 Eliminar usuario | ✅ | Video B; prueba completa (con y sin archivos, drop-in borrado, root protegido) |
+| B6 Documento consolidado | ✅ con correcciones pendientes | `Parcial 2 - Automatización de servicios.docx`: ver «Pendientes» |
+| C1 Entorno de pruebas | ⚠️ | `consola-pruebas` lista. La VM `balanceador` no es accesible desde la consola (ver «Pendientes») |
+| C2 Desplegar app como servicio | ✅ desde el 26 | El primer despliegue fallaba siempre (`test -x` antes de extraer); corregido y probado con el Bookzilla real |
+| C3 Seis botones de systemd | ✅ | Prueba completa: los 6 y `stop` sobre `ssh` rechazado. «enable sobrevive a un reinicio» no se probó |
+| C4 Script de fecha (oneshot) | ✅ | Prueba completa: dos `start` → dos líneas en `/var/log/consola-fecha.log` |
+| C5 HAProxy agregar / quitar | ✅ desde el 26 | Con la configuración predeterminada de Debian fallaba («no tiene ningún back-end»); ahora el primer servidor crea `frontend` y `backend`. Probado en `consola-pruebas` |
+| C6 Diagrama del escenario | ✅ | En el documento |
+| Videos | ✅ | Uno por parte (A 8:52, B 3:49, C 3:33) en vez de V1–V11 |
+| H2 Integración de punta a punta | ✅ el 26 | Prueba completa: 81 OK, 0 FALLA |
+| Auditoría `frontend-ux-audit` del jueves 22 | ⬜ | No hay evidencia de que se haya hecho |
+
+### Pendientes
+
+1. **Documento, Parte C:** describe Bookzilla como un servidor en Python (`http.server`, «Bookzilla Ready») y también como la aplicación en Go; dice `Restart=always` (la unidad usa `on-failure`) y `/var/log/fecha.log` (el script escribe en `/var/log/consola-fecha.log`). La prueba completa usa el Bookzilla real en Go.
+2. **VM `balanceador`:** Guest Additions 6.0 (no responden con VirtualBox 7.2), sin la llave de la consola y sin `keys/guest-pass-balanceador`. Para usarla: Guest Additions 7.2 + archivo de contraseña, o agregar `keys/consola_ed25519.pub` a su `/root/.ssh/authorized_keys`.
+3. **Duda del §7.2 sin resolver:** la consola no crea VMs desde el disco multiconexión; «Agregar servidor» edita `haproxy.cfg`.
+4. **Red de las VMs:** están en modo puente sobre `wlo1` (Wi-Fi). Con el host por cable hay que cambiar el adaptador (ver PRUEBA-COMPLETA.md).
