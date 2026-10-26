@@ -24,3 +24,6 @@ logs/
 .idea/
 *.swp
 .DS_Store
+
+# Go test binaries
+*.test
