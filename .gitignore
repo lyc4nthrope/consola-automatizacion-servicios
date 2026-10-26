@@ -27,3 +27,7 @@ logs/
 
 # Go test binaries
 *.test
+
+# Browser check dependencies and its screenshots
+node_modules/
+/evidencias/

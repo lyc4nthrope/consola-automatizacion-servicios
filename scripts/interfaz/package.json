@@ -1,0 +1,11 @@
+{
+  "name": "consola-prueba-interfaz",
+  "private": true,
+  "description": "Browser check of every screen of the console against the real VMs",
+  "scripts": {
+    "prueba": "cd ../.. && node scripts/interfaz/prueba-interfaz.js"
+  },
+  "dependencies": {
+    "playwright-core": "1.49.1"
+  }
+}

@@ -359,7 +359,7 @@ Todas las ramas (`cristhian`, `daniel`, `wiliam`, `wiliam-final`, `integracion`,
 | C5 HAProxy agregar / quitar | ✅ desde el 26 | Con la configuración predeterminada de Debian fallaba («no tiene ningún back-end»); ahora el primer servidor crea `frontend` y `backend`. Probado en `consola-pruebas` y en la VM `balanceador` |
 | C6 Diagrama del escenario | ✅ | En el documento |
 | Videos | ✅ | Uno por parte (A 8:52, B 3:49, C 3:33) en vez de V1–V11 |
-| H2 Integración de punta a punta | ✅ el 26 | Prueba completa: 81 OK, 0 FALLA |
+| H2 Integración de punta a punta | ✅ el 26 | Prueba completa por HTTP: 81 OK, 0 FALLA. Prueba desde el navegador, pantalla por pantalla: 54 OK, 0 FALLA |
 | Auditoría `frontend-ux-audit` del jueves 22 | ⬜ | No hay evidencia de que se haya hecho |
 
 ### Pendientes

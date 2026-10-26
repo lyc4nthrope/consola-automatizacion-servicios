@@ -52,6 +52,17 @@ Cada línea dice `OK` o `FALLA` con el mensaje que mostró la consola; al final,
 
 Rama `fix/despliegue-servicios` (después unida a `main`), VM `consola-pruebas` (Debian 13, 192.168.40.57), empezando por Guest Additions: **81 OK, 0 FALLA**.
 
+## Prueba desde el navegador
+
+`scripts/interfaz/prueba-interfaz.js` hace lo mismo **desde la interfaz**: un Chromium real elige el destino, llena cada formulario, pulsa los botones (incluidos «Nuevo usuario», «Vista previa», la confirmación de «Eliminar» y las descargas de llaves) y verifica el efecto en la VM por SSH. Así se comprueba que todo lo del enunciado se puede hacer desde el front, no solo por HTTP. Prueba HAProxy en la VM `balanceador` real y guarda una captura de cada resultado en `evidencias/interfaz/`.
+
+```bash
+(cd scripts/interfaz && npm install)               # una vez: playwright-core 1.49.1
+node scripts/interfaz/prueba-interfaz.js
+```
+
+Usa el Chromium de Playwright (`~/.cache/ms-playwright/chromium-1148`) o el que indique `CHROMIUM`. Resultado del 26 de octubre de 2026, empezando por Guest Additions: **54 OK, 0 FALLA**.
+
 ## Límites de esta prueba
 
 - El script prueba HAProxy en `consola-pruebas`. La VM `balanceador` (192.168.40.53) se probó aparte el 26 de octubre: agregar y quitar `192.168.40.57:8080` en `http_back` funcionó, y el puerto 80 entregó Bookzilla. Para que la consola entre a esa VM, su `/root/.ssh/authorized_keys` debe tener `keys/consola_ed25519.pub` (sus Guest Additions 6.0 no responden con VirtualBox 7.2). Sus servidores del laboratorio (`servidor1`–`servidor3`, `.50`–`.52:8000`) deben estar encendidos: sus líneas no tienen `check` y HAProxy les envía peticiones aunque estén apagados.
