@@ -108,7 +108,7 @@ function titulo(t) {
   const page = await contexto.newPage();
   page.setDefaultTimeout(LENTO);
   const llaves = fs.mkdtempSync(path.join(os.tmpdir(), "consola-llaves-"));
-  const hostAntes = vm("hostname");
+  let hostAntes; // read in 3.1.4: before "Conectar por SSH" the console key is not authorized yet
 
   try {
     titulo("Panel y canal (Guest Additions → SSH)");
@@ -173,6 +173,8 @@ function titulo(t) {
     verificar("En la VM: /etc/issue volvió al original", !(vm("cat /etc/issue") || "x").includes("Prueba de interfaz"));
 
     titulo("3.1.4 Nombre de host y /etc/hosts");
+    hostAntes = vm("hostname");
+    verificar("Se leyó el nombre de host original por SSH", !!hostAntes);
     await page.goto(`${CONSOLA}/preparacion`);
     await page.fill("#hostname", "prueba-interfaz");
     await pulsar(page, "Cambiar nombre");
